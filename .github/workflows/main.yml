@@ -1,0 +1,31 @@
+name: Main
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    name: Build, Test & Publish
+    runs-on: ubuntu-latest
+    environment: snapshot
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: 25
+          distribution: temurin
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+      - name: Publish to Maven Central
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          OSSRH_SIGN_DISABLE: true
+        run: ./gradlew publish --no-daemon

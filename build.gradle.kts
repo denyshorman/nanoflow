@@ -100,6 +100,10 @@ publishing {
 }
 
 signing {
-    useGpgCmd()
-    sign(publishing.publications["maven"])
+    isRequired = System.getenv("OSSRH_SIGN_DISABLE")?.toBoolean()?.not() ?: true
+
+    if (isRequired) {
+        useGpgCmd()
+        sign(publishing.publications["maven"])
+    }
 }
