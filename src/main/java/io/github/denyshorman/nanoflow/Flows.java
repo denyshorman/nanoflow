@@ -9,6 +9,7 @@ package io.github.denyshorman.nanoflow;
  *
  * <h2>Available Flow Types</h2>
  * <ul>
+ *   <li>{@link #emptyFlow()} - Empty flow that emits no values</li>
  *   <li>{@link #flow(FlowAction)} - Sequential flow for single-threaded emission</li>
  *   <li>{@link #concurrentFlow(FlowAction)} - Concurrent flow for multithreaded emission</li>
  * </ul>
@@ -17,7 +18,42 @@ package io.github.denyshorman.nanoflow;
  * @since 0.1.0
  */
 public final class Flows {
+    /**
+     * Singleton instance of an empty flow.
+     * Raw type is safe here because the flow emits no values and cannot violate type safety.
+     */
+    @SuppressWarnings("rawtypes")
+    private static final SimpleFlow EMPTY_FLOW = new SimpleFlow<>(emitter -> {
+    });
+
     private Flows() {
+    }
+
+    /**
+     * Creates an empty flow that emits no values.
+     * <p>
+     * The returned flow immediately completes when {@link Flow#collect(Collector)} is called
+     * without emitting any values. This is useful as a placeholder, for conditional logic,
+     * or as a default value.
+     * <p>
+     * This method returns a singleton instance for optimal memory usage.
+     *
+     * <h2>Example</h2>
+     * <pre>{@code
+     * Flow<String> flow = condition ? actualFlow : Flows.emptyFlow();
+     *
+     * var count = new AtomicInteger(0);
+     * Flows.<String>emptyFlow().collect(value -> count.incrementAndGet());
+     * // count.get() == 0
+     * }</pre>
+     *
+     * @param <T> the type of values (not emitted) by the flow
+     * @return an empty Flow that emits nothing
+     * @see #flow(FlowAction)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> Flow<T> emptyFlow() {
+        return EMPTY_FLOW;
     }
 
     /**
