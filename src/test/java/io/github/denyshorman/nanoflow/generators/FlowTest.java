@@ -29,22 +29,6 @@ class FlowTest {
     }
 
     @Test
-    void shouldAcceptNullValuesInEmissions() {
-        var flow = Flows.<String>flow(emitter -> {
-            emitter.emit("first");
-            emitter.emit(null);
-            emitter.emit("third");
-        });
-
-        var list = new ArrayList<String>();
-        flow.collect(list::add);
-        assertEquals(3, list.size());
-        assertEquals("first", list.get(0));
-        assertNull(list.get(1));
-        assertEquals("third", list.get(2));
-    }
-
-    @Test
     void shouldCompleteSuccessfullyWhenNoValuesAreEmitted() {
         var flow = Flows.<Integer>flow(emitter -> {
             // No emissions
@@ -207,17 +191,15 @@ class FlowTest {
         var flow = Flows.<Person>flow(emitter -> {
             emitter.emit(new Person("Alice", 30));
             emitter.emit(new Person("Bob", 25));
-            emitter.emit(null);
             emitter.emit(new Person("Charlie", 35));
         });
 
         var list = new ArrayList<Person>();
         flow.collect(list::add);
-        assertEquals(4, list.size());
+        assertEquals(3, list.size());
         assertEquals("Alice", list.get(0).name());
         assertEquals("Bob", list.get(1).name());
-        assertNull(list.get(2));
-        assertEquals("Charlie", list.get(3).name());
+        assertEquals("Charlie", list.get(2).name());
     }
 
     @Test

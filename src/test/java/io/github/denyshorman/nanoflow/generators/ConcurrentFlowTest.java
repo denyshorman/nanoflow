@@ -86,22 +86,6 @@ class ConcurrentFlowTest {
     }
 
     @Test
-    void shouldAcceptNullValuesInEmissions() {
-        var flow = Flows.<String>concurrentFlow(emitter -> {
-            emitter.emit("first");
-            emitter.emit(null);
-            emitter.emit("third");
-        });
-
-        var list = new ArrayList<String>();
-        flow.collect(list::add);
-        assertEquals(3, list.size());
-        assertTrue(list.contains(null));
-        assertTrue(list.contains("first"));
-        assertTrue(list.contains("third"));
-    }
-
-    @Test
     void shouldCompleteSuccessfullyWhenNoValuesAreEmitted() {
         var flow = Flows.<Integer>concurrentFlow(emitter -> {
             // No emissions

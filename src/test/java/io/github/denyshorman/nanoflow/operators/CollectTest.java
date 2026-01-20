@@ -68,25 +68,6 @@ class CollectTest {
     }
 
     @Test
-    void shouldCollectNullValues() {
-        var flow = Flows.<String>flow(emitter -> {
-            emitter.emit("first");
-            emitter.emit(null);
-            emitter.emit("third");
-            emitter.emit(null);
-        });
-
-        var list = new ArrayList<String>();
-        flow.collect(list::add);
-
-        assertEquals(4, list.size());
-        assertEquals("first", list.get(0));
-        assertNull(list.get(1));
-        assertEquals("third", list.get(2));
-        assertNull(list.get(3));
-    }
-
-    @Test
     void shouldCompleteWhenEmptyFlow() {
         var flow = Flows.<Integer>emptyFlow();
 

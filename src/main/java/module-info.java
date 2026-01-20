@@ -1,3 +1,5 @@
+import org.jspecify.annotations.NullMarked;
+
 /**
  * Nanoflow - A lightweight, concurrent flow implementation for Java 21+.
  * <p>
@@ -37,6 +39,8 @@
  *
  * @since 0.1.0
  */
+@NullMarked
 module io.github.denyshorman.nanoflow {
+    requires transitive org.jspecify;
     exports io.github.denyshorman.nanoflow;
 }
