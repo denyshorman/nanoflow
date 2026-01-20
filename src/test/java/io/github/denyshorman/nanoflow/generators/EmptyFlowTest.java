@@ -1,5 +1,7 @@
-package io.github.denyshorman.nanoflow;
+package io.github.denyshorman.nanoflow.generators;
 
+import io.github.denyshorman.nanoflow.Flow;
+import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;

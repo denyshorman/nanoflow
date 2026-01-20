@@ -1,5 +1,6 @@
-package io.github.denyshorman.nanoflow;
+package io.github.denyshorman.nanoflow.generators;
 
+import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -10,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class SimpleFlowTest {
+class FlowTest {
     @Test
     void shouldCollectAllValuesInOrder() {
         var flow = Flows.<Integer>flow(emitter -> {
