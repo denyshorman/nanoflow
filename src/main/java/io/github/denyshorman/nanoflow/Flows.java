@@ -1,152 +1,558 @@
 package io.github.denyshorman.nanoflow;
 
+import io.github.denyshorman.nanoflow.internal.sequence.BufferedSequence;
+import io.github.denyshorman.nanoflow.internal.sequence.EmptySequence;
+
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.BlockingQueue;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
+
+import static io.github.denyshorman.nanoflow.internal.util.SneakyThrow.sneakyThrow;
+
 /**
- * Factory class for creating {@link Flow} instances.
- * <p>
- * This class provides factory methods for creating flows with different concurrency
- * characteristics. All factory methods return cold flows that execute their emission
- * logic only when {@link Flow#collect(Collector)} is called.
+ * Factory and generator methods for {@link Flow}.
  *
- * <h2>Available Flow Types</h2>
- * <ul>
- *   <li>{@link #emptyFlow()} - Empty flow that emits no values</li>
- *   <li>{@link #flow(FlowAction)} - Sequential flow for single-threaded emission</li>
- *   <li>{@link #concurrentFlow(FlowAction)} - Concurrent flow for multithreaded emission</li>
- * </ul>
+ * <p>This class provides static methods to create flows from various sources like
+ * collections, streams, or custom producer actions.
  *
- * @see Flow
- * @since 0.1.0
+ * <p>Nanoflow does not allow {@code null} values in flows. All methods in this class
+ * expect non-null elements and producers. Providing {@code null} where it's not
+ * explicitly allowed by {@link org.jspecify.annotations.Nullable} will result
+ * in a {@link NullPointerException}.
+ *
+ * <p>Typical usage:
+ * <pre>{@code
+ * var flow = Flows.of(1, 2, 3);
+ * flow.collect(System.out::println);
+ * }</pre>
  */
 public final class Flows {
-    /**
-     * Singleton instance of an empty flow.
-     * Raw type is safe here because the flow emits no values and cannot violate type safety.
-     */
-    @SuppressWarnings("rawtypes")
-    private static final SimpleFlow EMPTY_FLOW = new SimpleFlow<>(emitter -> {
-    });
-
     private Flows() {
     }
 
+    //#region Core
+
     /**
-     * Creates an empty flow that emits no values.
-     * <p>
-     * The returned flow immediately completes when {@link Flow#collect(Collector)} is called
-     * without emitting any values. This is useful as a placeholder, for conditional logic,
-     * or as a default value.
-     * <p>
-     * This method returns a singleton instance for optimal memory usage.
+     * Creates a flow from a producer action.
      *
-     * <h2>Example</h2>
-     * <pre>{@code
-     * Flow<String> flow = condition ? actualFlow : Flows.emptyFlow();
+     * <p>This is the primary way to create custom flows. The {@code action} defines how values
+     * are produced and is executed each time the flow is {@link Flow#open() opened}.
      *
-     * var count = new AtomicInteger(0);
-     * Flows.<String>emptyFlow().collect(value -> count.incrementAndGet());
-     * // count.get() == 0
-     * }</pre>
+     * <h3>Execution Model</h3>
+     * Each call to {@link Flow#open()} (or terminal operators like {@link Flow#collect(Flow.Collector)})
+     * triggers a new execution of the {@code action}.
      *
-     * @param <T> the type of values (not emitted) by the flow
-     * @return an empty Flow that emits nothing
-     * @see #flow(FlowAction)
+     * <h3>Buffer and Backpressure</h3>
+     * By default, this method uses a <b>synchronous handoff</b> (buffer size 0). The producer
+     * will block on {@link Flow.Emitter#emit(Object)} until the consumer retrieves the value.
+     * To use a buffer, use {@link #flow(int, Flow.Action)}.
+     *
+     * <h3>Cancellation</h3>
+     * If the consumer closes the flow or is interrupted, the producer thread is interrupted.
+     * Blocking calls that honor interruption may throw {@link InterruptedException} or return early.
+     * Producers should handle interruption or periodically check {@link Thread#isInterrupted()}
+     * (especially if CPU-bound) to stop production and release resources.
+     *
+     * <h3>Exception Handling</h3>
+     * Exceptions thrown within the {@code action} are propagated directly to the consumer
+     * during iteration or collection.
+     *
+     * <h3>Concurrent Emission</h3>
+     * The {@code action} can emit values from multiple threads concurrently using the
+     * provided {@link Flow.Emitter}. The consumer sees a single sequence in arrival order.
+     *
+     * @param action producer action
+     * @param <T>    value type
+     * @return a new flow
      */
-    @SuppressWarnings("unchecked")
-    public static <T> Flow<T> emptyFlow() {
-        return EMPTY_FLOW;
+    public static <T> Flow<T> flow(Flow.Action<T> action) {
+        return () -> new BufferedSequence<>(0, action);
     }
 
     /**
-     * Creates a simple, sequential flow for single-threaded value emission.
-     * <p>
-     * The returned flow executes the emission logic on the thread that calls
-     * {@link Flow#collect(Collector)}. The collector will be invoked sequentially
-     * for each emitted value. This implementation has minimal overhead and is
-     * suitable when all emissions happen from a single thread.
+     * Creates a flow from a producer action using a buffer of the given size.
      *
-     * <h2>Thread Safety</h2>
-     * The emitter provided to the action should only be used from a single thread.
-     * The collector will be called from the same thread that invokes {@code collect()}.
+     * <p>This method behaves identically to {@link #flow(Flow.Action)}, but allows
+     * specifying a buffer capacity.
      *
-     * <h2>Virtual Thread Friendly</h2>
-     * This implementation works seamlessly with Java's Virtual Threads and does not
-     * use any blocking synchronization primitives.
+     * <h3>Buffer and Backpressure</h3>
+     * A buffer allows the producer to continue emitting values even if the consumer is slower.
+     * When the buffer is full, the producer will block on {@link Flow.Emitter#emit(Object)}
+     * until the consumer makes more space.
      *
-     * <h2>Example</h2>
-     * <pre>{@code
-     * var flow = Flows.<String>flow(emitter -> {
-     *     emitter.emit("Hello");
-     *     emitter.emit("World");
-     * });
-     *
-     * var results = new ArrayList<String>();
-     * flow.collect(results::add);
-     * // results = ["Hello", "World"]
-     * }</pre>
-     *
-     * @param action the emission logic that produces values; must not be null
-     * @param <T>    the type of values emitted by the flow
-     * @return a new sequential Flow that executes the given action
-     * @throws NullPointerException if the action is null
-     * @see #concurrentFlow(FlowAction)
+     * @param bufferSize the number of elements that can be stored in the buffer before the producer
+     *                   blocks.
+     *                   <ul>
+     *                   <li><b>Positive value:</b> Creates a buffer of the specified capacity.</li>
+     *                   <li><b>0:</b> No buffer is created; the producer and consumer synchronize
+     *                   on each element (synchronous handoff).</li>
+     *                   <li><b>{@link Integer#MAX_VALUE}:</b> Creates an effectively unbounded buffer
+     *                   (limited only by available memory).</li>
+     *                   </ul>
+     * @param action     producer action that will be executed when the flow is opened
+     * @param <T>        value type
+     * @return a new flow
+     * @throws IllegalArgumentException if {@code bufferSize} is negative
      */
-    public static <T> Flow<T> flow(FlowAction<T> action) {
-        return new SimpleFlow<>(action);
+    public static <T> Flow<T> flow(int bufferSize, Flow.Action<T> action) {
+        return () -> new BufferedSequence<>(bufferSize, action);
+    }
+    //#endregion
+
+    //#region Lifecycle
+
+    /**
+     * Returns a flow that emits no values and completes immediately.
+     *
+     * @param <T> value type
+     * @return an empty flow
+     */
+    public static <T> Flow<T> empty() {
+        return EmptySequence::instance;
     }
 
     /**
-     * Creates a concurrent flow that supports multithreaded value emission with
-     * serialized collector access.
-     * <p>
-     * The returned flow allows the emission logic to emit values from multiple threads
-     * concurrently. While emissions can happen in parallel, the flow ensures that the
-     * collector receives values in a serialized manner (one at a time), preventing
-     * race conditions in the collector.
+     * Returns a flow that never emits and never completes.
      *
-     * <h3>Thread Safety</h3>
-     * <ul>
-     *   <li>The emitter is thread-safe and can be called from multiple threads concurrently</li>
-     *   <li>The collector is guaranteed to receive values one at a time (serialized)</li>
-     *   <li>Supports interruption via {@link Thread#interrupt()}</li>
-     * </ul>
+     * @param <T> value type
+     * @return a never-ending flow
+     */
+    public static <T> Flow<T> never() {
+        return flow(emitter -> Thread.sleep(Long.MAX_VALUE));
+    }
+
+    /**
+     * Returns a flow that fails with {@code error} when collected.
      *
-     * <h3>Performance Considerations</h3>
-     * Concurrent emission introduces synchronization overhead. Use this only when you
-     * actually need to emit values from multiple threads. For single-threaded scenarios,
-     * prefer {@link #flow(FlowAction)}.
+     * @param error error to throw
+     * @param <T>   value type
+     * @return a failing flow
+     */
+    public static <T> Flow<T> error(Throwable error) {
+        return flow(emitter -> {
+            throw sneakyThrow(error);
+        });
+    }
+
+    /**
+     * Returns a flow that calls {@code supplier} for each subscription.
      *
-     * <h3>Virtual Thread Friendly</h3>
-     * This implementation is designed to work efficiently with Java's Virtual Threads.
+     * @param supplier flow supplier
+     * @param <T>      value type
+     * @return a deferred flow
+     */
+    public static <T> Flow<T> defer(Supplier<? extends Flow<? extends T>> supplier) {
+        return flow(emitter -> {
+            try (var upstream = supplier.get().open()) {
+                for (var item : upstream) {
+                    emitter.emit(item);
+                }
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Composition
+
+    /**
+     * Concatenates the given flows in order.
      *
-     * <h3>Example</h3>
+     * @param flows flows to concatenate
+     * @param <T>   value type
+     * @return a concatenated flow
+     */
+    @SafeVarargs
+    public static <T> Flow<T> concat(Flow<? extends T>... flows) {
+        return flow(emitter -> {
+            for (var f : flows) {
+                try (var items = f.open()) {
+                    for (var item : items) {
+                        emitter.emit(item);
+                    }
+                }
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Sources
+
+    //#region Iterable & Stream
+
+    /**
+     * Returns a flow that emits values from the given iterable.
+     *
+     * <p>The iterable is traversed each time the flow is opened.
+     *
+     * @param items source items. Must not be null.
+     * @param <T>   value type
+     * @return a flow over the iterable
+     */
+    public static <T> Flow<T> from(Iterable<? extends T> items) {
+        return flow(emitter -> {
+            for (var item : items) {
+                emitter.emit(item);
+            }
+        });
+    }
+
+    /**
+     * Returns a flow that emits values from the given stream and closes it.
+     *
+     * <p>The stream is consumed each time the flow is opened. Since streams can only be
+     * consumed once, this flow can only be opened once. For a flow that can be opened
+     * multiple times from a stream source, use {@link #defer(Supplier)} and provide
+     * a stream supplier.
+     *
+     * @param stream source stream. Must not be null.
+     * @param <T>    value type
+     * @return a flow over the stream
+     */
+    public static <T> Flow<T> from(Stream<? extends T> stream) {
+        return flow(emitter -> {
+            try (stream) {
+                var it = stream.iterator();
+
+                while (it.hasNext()) {
+                    emitter.emit(it.next());
+                }
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region BlockingQueue
+
+    /**
+     * Returns a flow that emits values taken from {@code queue}.
+     *
+     * <p>This method blocks on {@link BlockingQueue#take()} and stops on interruption.
+     * Note that if the queue is being populated by another thread, this flow might
+     * complete before all elements are produced if the queue becomes temporarily empty
+     * and the thread is interrupted, or if it is used in a context that expects a
+     * termination signal. For queues with a termination signal, use {@link #from(BlockingQueue, Object)}.
+     *
+     * @param queue source queue. Must not be null.
+     * @param <T>   value type
+     * @return a flow over the queue
+     */
+    public static <T> Flow<T> from(BlockingQueue<? extends T> queue) {
+        return flow(emitter -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                emitter.emit(queue.take());
+            }
+        });
+    }
+
+    /**
+     * Returns a flow that emits values from {@code queue} until {@code stopToken} is seen.
+     *
+     * <p>The {@code stopToken} is not emitted. This method blocks while waiting for elements
+     * in the queue.
+     *
+     * @param queue     source queue. Must not be null.
+     * @param stopToken value that signals the end of the flow
+     * @param <T>       value type
+     * @return a flow over the queue
+     */
+    public static <T> Flow<T> from(BlockingQueue<? extends T> queue, T stopToken) {
+        return from(queue, item -> Objects.equals(item, stopToken));
+    }
+
+    /**
+     * Returns a flow that emits values from {@code queue} until {@code isStop} is true.
+     *
+     * <p>The element that satisfies {@code isStop} is not emitted. This method blocks while
+     * waiting for elements in the queue.
+     *
+     * @param queue  source queue. Must not be null.
+     * @param isStop predicate that signals the end of the flow
+     * @param <T>    value type
+     * @return a flow over the queue
+     */
+    public static <T> Flow<T> from(BlockingQueue<? extends T> queue, Predicate<? super T> isStop) {
+        return flow(emitter -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                var item = queue.take();
+                if (isStop.test(item)) {
+                    return;
+                }
+                emitter.emit(item);
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Array
+
+    /**
+     * Returns a flow that emits the given items.
+     *
+     * <p>Example:
      * <pre>{@code
-     * var flow = Flows.<Integer>concurrentFlow(emitter -> {
-     *     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-     *         for (var i = 0; i < 1000; i++) {
-     *             final var value = i;
-     *             executor.submit(() -> emitter.emit(value));
-     *         }
-     *     } // waits for all tasks to complete
-     * });
-     *
-     * var results = new ArrayList<Integer>();
-     * flow.collect(results::add);
-     * // results contains all 1000 values (order not guaranteed)
+     * Flows.of("Hello", "World")
+     *     .toList(); // ["Hello", "World"]
      * }</pre>
      *
-     * <h3>Important Notes</h3>
-     * <ul>
-     *   <li>Collectors do not need to be thread-safe; the flow handles serialization</li>
-     *   <li>Emission order is not guaranteed when multiple threads emit concurrently</li>
-     * </ul>
-     *
-     * @param action the emission logic that produces values; must not be null
-     * @param <T>    the type of values emitted by the flow
-     * @return a new concurrent Flow that executes the given action
-     * @throws NullPointerException if the action is null
-     * @see #flow(FlowAction)
+     * @param items items to emit
+     * @param <T>   value type
+     * @return a flow over the array
      */
-    public static <T> Flow<T> concurrentFlow(FlowAction<T> action) {
-        return new ConcurrentFlow<>(action);
+    @SafeVarargs
+    public static <T> Flow<T> of(T... items) {
+        return flow(emitter -> {
+            for (var item : items) {
+                emitter.emit(item);
+            }
+        });
     }
+
+    //#endregion
+
+    //#endregion
+
+    //#region Ranges
+
+    /**
+     * Returns a flow that emits values from {@code startInclusive} to {@code endExclusive}.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * Flows.range(0, 5)
+     *     .toList(); // [0, 1, 2, 3, 4]
+     * }</pre>
+     *
+     * @param startInclusive the (inclusive) initial value
+     * @param endExclusive   the (exclusive) upper bound
+     * @return a flow over the range
+     */
+    public static Flow<Integer> range(int startInclusive, int endExclusive) {
+        return flow(emitter -> {
+            for (var i = startInclusive; i < endExclusive; i++) {
+                emitter.emit(i);
+            }
+        });
+    }
+
+    /**
+     * Returns a flow that emits values from {@code startInclusive} to {@code endInclusive}.
+     *
+     * @param startInclusive the (inclusive) initial value
+     * @param endInclusive   the (inclusive) upper bound
+     * @return a flow over the closed range
+     */
+    public static Flow<Integer> rangeClosed(int startInclusive, int endInclusive) {
+        return flow(emitter -> {
+            for (long i = startInclusive; i <= endInclusive; i++) {
+                emitter.emit((int) i);
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Generation
+
+    /**
+     * Returns an infinite flow that generates values using the given supplier.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * Flows.generate(() -> Math.random())
+     *     .take(3)
+     *     .toList(); // [0.123..., 0.456..., 0.789...]
+     * }</pre>
+     *
+     * @param supplier value supplier. Must not be null.
+     * @param <T>      value type
+     * @return a generated flow
+     */
+    public static <T> Flow<T> generate(Supplier<? extends T> supplier) {
+        return flow(emitter -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                emitter.emit(supplier.get());
+            }
+        });
+    }
+
+    /**
+     * Returns a flow that generates at most {@code count} values using the given supplier.
+     *
+     * @param count    number of values to generate. Must be non-negative.
+     * @param supplier value supplier. Must not be null.
+     * @param <T>      value type
+     * @return a generated flow
+     * @throws IllegalArgumentException if {@code count} is negative
+     */
+    public static <T> Flow<T> generate(long count, Supplier<? extends T> supplier) {
+        if (count < 0) throw new IllegalArgumentException("count must be >= 0");
+        if (count == 0) return empty();
+
+        return flow(emitter -> {
+            for (var i = 0L; i < count; i++) {
+                emitter.emit(supplier.get());
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Iteration
+
+    /**
+     * Returns an infinite flow by applying {@code next} to the previous value, starting with {@code seed}.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * Flows.iterate(1, n -> n * 2)
+     *     .take(5)
+     *     .toList(); // [1, 2, 4, 8, 16]
+     * }</pre>
+     *
+     * @param seed initial value
+     * @param next function that produces the next value. Must not be null.
+     * @param <T>  value type
+     * @return an iterative flow
+     */
+    public static <T> Flow<T> iterate(T seed, UnaryOperator<T> next) {
+        return flow(emitter -> {
+            var current = seed;
+            while (!Thread.currentThread().isInterrupted()) {
+                emitter.emit(current);
+                current = next.apply(current);
+            }
+        });
+    }
+
+    /**
+     * Returns a flow by applying {@code next} to the previous value while {@code hasNext} is true.
+     *
+     * @param seed    initial value
+     * @param hasNext predicate that determines if the flow should continue. Must not be null.
+     * @param next    function that produces the next value. Must not be null.
+     * @param <T>     value type
+     * @return an iterative flow
+     */
+    public static <T> Flow<T> iterate(
+            T seed,
+            Predicate<? super T> hasNext,
+            UnaryOperator<T> next
+    ) {
+        return flow(emitter -> {
+            var current = seed;
+            while (hasNext.test(current) && !Thread.currentThread().isInterrupted()) {
+                emitter.emit(current);
+                current = next.apply(current);
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Repetition
+
+    /**
+     * Returns an infinite flow that repeats {@code value}.
+     *
+     * @param value value to repeat
+     * @param <T>   value type
+     * @return a repeating flow
+     */
+    public static <T> Flow<T> repeat(T value) {
+        return flow(emitter -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                emitter.emit(value);
+            }
+        });
+    }
+
+    /**
+     * Returns a flow that repeats {@code value} at most {@code count} times.
+     *
+     * @param count number of times to repeat. Must be non-negative.
+     * @param value value to repeat
+     * @param <T>   value type
+     * @return a repeating flow
+     * @throws IllegalArgumentException if {@code count} is negative
+     */
+    public static <T> Flow<T> repeat(long count, T value) {
+        if (count < 0) throw new IllegalArgumentException("count must be >= 0");
+
+        return flow(emitter -> {
+            for (var i = 0L; i < count; i++) {
+                emitter.emit(value);
+            }
+        });
+    }
+
+    //#endregion
+
+    //#region Timing
+
+    /**
+     * Returns a flow that emits a single tick after {@code delay} and then completes.
+     *
+     * @param delay delay before the tick. Must be non-negative.
+     * @return a flow that emits a single tick value of 0
+     * @throws IllegalArgumentException if {@code delay} is negative
+     */
+    public static Flow<Long> timer(Duration delay) {
+        if (delay.isNegative()) throw new IllegalArgumentException("delay must be >= 0");
+
+        return flow(emitter -> {
+            if (!delay.isZero()) {
+                Thread.sleep(delay);
+            }
+            emitter.emit(0L);
+        });
+    }
+
+    /**
+     * Returns a flow that emits ticks every {@code period}.
+     *
+     * <p>The first tick is emitted immediately, then every {@code period} thereafter.
+     *
+     * @param period time between ticks. Must be positive.
+     * @return a flow of ticks starting at 0
+     * @throws IllegalArgumentException if {@code period} is zero or negative
+     */
+    public static Flow<Long> interval(Duration period) {
+        return interval(Duration.ZERO, period);
+    }
+
+    /**
+     * Returns a flow that emits ticks after {@code initialDelay} and then every {@code period}.
+     *
+     * @param initialDelay delay before the first tick. Must be non-negative.
+     * @param period       time between ticks. Must be positive.
+     * @return a flow of ticks starting at 0
+     * @throws IllegalArgumentException if {@code initialDelay} is negative or {@code period} is zero or negative
+     */
+    public static Flow<Long> interval(Duration initialDelay, Duration period) {
+        if (initialDelay.isNegative()) throw new IllegalArgumentException("initialDelay must be >= 0");
+        if (period.isZero() || period.isNegative()) throw new IllegalArgumentException("period must be > 0");
+
+        return flow(emitter -> {
+            if (!initialDelay.isZero()) {
+                Thread.sleep(initialDelay);
+            }
+
+            var tick = 0L;
+
+            while (!Thread.currentThread().isInterrupted()) {
+                emitter.emit(tick++);
+                Thread.sleep(period);
+            }
+        });
+    }
+
+    //#endregion
 }

@@ -1,90 +1,36 @@
 /**
- * Provides a lightweight, concurrent flow implementation for Java 21+.
- * <p>
- * Nanoflow offers a simple API for creating cold streams that support both sequential
- * and concurrent value emission patterns. The library is designed to work seamlessly
- * with Java's Virtual Threads while providing minimal overhead.
+ * Core Flow API for ordered sequences with explicit lifecycle control.
  *
- * <h2>Core Concepts</h2>
- * <dl>
- *   <dt><b>Flow</b></dt>
- *   <dd>A cold stream that emits values only when {@link io.github.denyshorman.nanoflow.Flow#collect(io.github.denyshorman.nanoflow.Collector) collect()}
- *       is called. Each collection starts the emission process from the beginning.</dd>
+ * <h2>Overview</h2>
+ * <p>Nanoflow is a minimal library for reactive programming focused on simplicity.
+ * It provides a {@link io.github.denyshorman.nanoflow.Flow} interface which represents a sequence
+ * of values that can be produced concurrently and consumed sequentially.
  *
- *   <dt><b>Emitter</b></dt>
- *   <dd>Used within the flow action to push values into the flow.</dd>
+ * <h2>The open() + for-each Model</h2>
+ * <p>A central design choice of Nanoflow is its reliance on standard Java constructs for flow consumption.
+ * Instead of complex subscription callbacks or chainable operators, a flow is typically consumed
+ * by opening a {@link io.github.denyshorman.nanoflow.Flow.Sequence} and iterating over it using
+ * a standard for-each loop.
  *
- *   <dt><b>Collector</b></dt>
- *   <dd>Receives and processes values emitted by the flow.</dd>
+ * <p>With bounded buffers, the producer blocks if the consumer is not ready,
+ * ensures resource safety through the {@link java.lang.AutoCloseable} nature of the sequence,
+ * and allows checked exceptions to propagate naturally.
  *
- *   <dt><b>Sequential Flow</b></dt>
- *   <dd>Created via {@link io.github.denyshorman.nanoflow.Flows#flow(io.github.denyshorman.nanoflow.FlowAction)}.
- *       Designed for single-threaded emission with no synchronization overhead.</dd>
- *
- *   <dt><b>Concurrent Flow</b></dt>
- *   <dd>Created via {@link io.github.denyshorman.nanoflow.Flows#concurrentFlow(io.github.denyshorman.nanoflow.FlowAction)}.
- *       Supports multi-threaded emission while ensuring the collector receives values serially.</dd>
- * </dl>
- *
- * <h2>Quick Start</h2>
  * <pre>{@code
- * import io.github.denyshorman.nanoflow.Flows;
- * import java.util.ArrayList;
- * import java.util.List;
- *
- * // Create a sequential flow
- * var flow = Flows.<String>flow(emitter -> {
- *     emitter.emit("Hello");
- *     emitter.emit("World");
- * });
- *
- * // Collect values
- * var results = new ArrayList<String>();
- * flow.collect(results::add);
- * System.out.println(results); // [Hello, World]
- * }</pre>
- *
- * <h2>Concurrent Emission Example</h2>
- * <pre>{@code
- * import io.github.denyshorman.nanoflow.Flows;
- * import java.util.concurrent.Executors;
- *
- * var flow = Flows.<Integer>concurrentFlow(emitter -> {
- *     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
- *         for (var i = 0; i < 100; i++) {
- *             final var value = i;
- *             executor.submit(() -> emitter.emit(value));
- *         }
- *     } // Executor waits for all tasks to complete
- * });
- *
- * flow.collect(value -> System.out.println("Received: " + value));
- * }</pre>
- *
- * <h2>Exception Handling</h2>
- * Checked exceptions thrown in flow actions are propagated to the caller without wrapping:
- * <pre>{@code
- * var flow = Flows.<String>flow(emitter -> {
- *     var data = readFile(); // may throw IOException
- *     emitter.emit(data);
- * });
- *
- * try {
- *     flow.collect(System.out::println);
- * } catch (IOException e) {
- *     // IOException is thrown directly, not wrapped
- *     System.err.println("Failed to read file: " + e.getMessage());
+ * try (var items = flow.open()) {
+ *     for (var item : items) {
+ *         // Handle item
+ *     }
  * }
  * }</pre>
  *
- * <h2>Thread Safety</h2>
+ * <h2>Key Features</h2>
  * <ul>
- *   <li><b>Sequential flows:</b> No thread safety guarantees. Use from a single thread.</li>
- *   <li><b>Concurrent flows:</b> Emitter is thread-safe. Collector receives values serially.</li>
+ *     <li><b>Concurrent Emission:</b> Multiple threads can emit values into the same flow concurrently,
+ *     and values are observed in arrival order.</li>
+ *     <li><b>Resource Management:</b> Flows are {@link io.github.denyshorman.nanoflow.Flow.Sequence} based,
+ *     requiring explicit closing to release resources.</li>
+ *     <li><b>Virtual Thread Friendly:</b> Designed to work seamlessly with Java 21+ virtual threads.</li>
  * </ul>
- *
- * @see io.github.denyshorman.nanoflow.Flows
- * @see io.github.denyshorman.nanoflow.Flow
- * @since 0.1.0
  */
 package io.github.denyshorman.nanoflow;
