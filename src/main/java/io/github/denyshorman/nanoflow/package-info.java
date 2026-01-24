@@ -1,36 +1,47 @@
 /**
- * Core Flow API for ordered sequences with explicit lifecycle control.
+ * Public API for creating and consuming flows.
  *
- * <h2>Overview</h2>
- * <p>Nanoflow is a minimal library for reactive programming focused on simplicity.
- * It provides a {@link io.github.denyshorman.nanoflow.Flow} interface which represents a sequence
- * of values that can be produced concurrently and consumed sequentially.
- *
- * <h2>The open() + for-each Model</h2>
- * <p>A central design choice of Nanoflow is its reliance on standard Java constructs for flow consumption.
- * Instead of complex subscription callbacks or chainable operators, a flow is typically consumed
- * by opening a {@link io.github.denyshorman.nanoflow.Flow.Sequence} and iterating over it using
- * a standard for-each loop.
- *
- * <p>With bounded buffers, the producer blocks if the consumer is not ready,
- * ensures resource safety through the {@link java.lang.AutoCloseable} nature of the sequence,
- * and allows checked exceptions to propagate naturally.
+ * <h2>Creating Flows</h2>
+ * Use {@link io.github.denyshorman.nanoflow.Flows} to create flows from sources and generators:
  *
  * <pre>{@code
- * try (var items = flow.open()) {
- *     for (var item : items) {
- *         // Handle item
- *     }
+ * var fromQueue = Flows.from(queue);
+ * var range = Flows.range(1, 10);
+ * var ticks = Flows.interval(Duration.ofSeconds(1));
+ * }</pre>
+ *
+ * <h2>Custom Producers</h2>
+ * For custom production, use {@link io.github.denyshorman.nanoflow.Flows#flow(io.github.denyshorman.nanoflow.Flow.Action)}.
+ * The {@link io.github.denyshorman.nanoflow.Flow.Action} receives a thread-safe
+ * {@link io.github.denyshorman.nanoflow.Flow.Emitter} that supports concurrent emission.
+ *
+ * <pre>{@code
+ * var flow = Flows.flow(emitter -> {
+ *     emitter.emit("a");
+ *     emitter.emit("b");
+ * });
+ * }</pre>
+ *
+ * <h2>Custom Operators</h2>
+ * Implement operators by returning a new {@link io.github.denyshorman.nanoflow.Flow} that wraps an
+ * upstream flow. Use {@link io.github.denyshorman.nanoflow.Flow#open()} to consume upstream values
+ * and emit transformed values.
+ *
+ * <pre>{@code
+ * static <T, R> Flow<R> map(Flow<T> upstream, Function<? super T, ? extends R> mapper) {
+ *     return Flows.flow(emitter -> {
+ *         try (var items = upstream.open()) {
+ *             for (var item : items) {
+ *                 emitter.emit(mapper.apply(item));
+ *             }
+ *         }
+ *     });
  * }
  * }</pre>
  *
- * <h2>Key Features</h2>
- * <ul>
- *     <li><b>Concurrent Emission:</b> Multiple threads can emit values into the same flow concurrently,
- *     and values are observed in arrival order.</li>
- *     <li><b>Resource Management:</b> Flows are {@link io.github.denyshorman.nanoflow.Flow.Sequence} based,
- *     requiring explicit closing to release resources.</li>
- *     <li><b>Virtual Thread Friendly:</b> Designed to work seamlessly with Java 21+ virtual threads.</li>
- * </ul>
+ * <h2>Sequence Contract</h2>
+ * A {@link io.github.denyshorman.nanoflow.Flow.Sequence} is single-consumer and must be closed to
+ * cancel production and release resources. Iteration and {@code close()} should happen on the same
+ * thread.
  */
 package io.github.denyshorman.nanoflow;

@@ -1,19 +1,14 @@
 package io.github.denyshorman.nanoflow;
 
+import io.github.denyshorman.nanoflow.internal.flow.operator.intermediate.*;
+import io.github.denyshorman.nanoflow.internal.flow.operator.terminal.*;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.*;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
-
-import static io.github.denyshorman.nanoflow.Flows.flow;
-import static io.github.denyshorman.nanoflow.internal.util.SneakyThrow.sneakyThrow;
 
 /**
  * An ordered sequence of values.
@@ -88,13 +83,7 @@ public interface Flow<T> {
      * @return a mapped flow
      */
     default <R> Flow<R> map(Function<? super T, ? extends R> mapper) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    emitter.emit(mapper.apply(item));
-                }
-            }
-        });
+        return new MapFlow<>(this, mapper);
     }
 
     /**
@@ -115,19 +104,7 @@ public interface Flow<T> {
      * @return a flattened flow
      */
     default <R> Flow<R> flatMap(Function<? super T, ? extends Flow<? extends R>> mapper) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    var innerFlow = mapper.apply(item);
-
-                    try (var innerUpstream = innerFlow.open()) {
-                        for (var innerItem : innerUpstream) {
-                            emitter.emit(innerItem);
-                        }
-                    }
-                }
-            }
-        });
+        return new FlatMapFlow<>(this, mapper);
     }
 
     /**
@@ -146,17 +123,25 @@ public interface Flow<T> {
      * @return a flow of accumulated values
      */
     default <R> Flow<R> scan(R initial, BiFunction<? super R, ? super T, ? extends R> reducer) {
-        return flow(emitter -> {
-            var accumulator = initial;
-            emitter.emit(accumulator);
+        return new ScanFlow<>(this, initial, reducer);
+    }
 
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    accumulator = reducer.apply(accumulator, item);
-                    emitter.emit(accumulator);
-                }
-            }
-        });
+    /**
+     * Returns a flow that casts each value to {@code type}.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * var flow = Flows.<Object>of("a", "b");
+     * flow.cast(String.class).toList(); // ["a", "b"]
+     * }</pre>
+     *
+     * @param type target class to cast to
+     * @param <R>  target type
+     * @return a flow with elements cast to {@code type}
+     * @throws ClassCastException if a value cannot be cast to {@code type}
+     */
+    default <R> Flow<R> cast(Class<R> type) {
+        return new CastFlow<>(this, type);
     }
 
     //#endregion
@@ -178,15 +163,7 @@ public interface Flow<T> {
      * @see #filterNot(Predicate)
      */
     default Flow<T> filter(Predicate<? super T> predicate) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (predicate.test(item)) {
-                        emitter.emit(item);
-                    }
-                }
-            }
-        });
+        return new FilterFlow<>(this, predicate, true);
     }
 
     /**
@@ -197,15 +174,7 @@ public interface Flow<T> {
      * @see #filter(Predicate)
      */
     default Flow<T> filterNot(Predicate<? super T> predicate) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (!predicate.test(item)) {
-                        emitter.emit(item);
-                    }
-                }
-            }
-        });
+        return new FilterFlow<>(this, predicate, false);
     }
 
     /**
@@ -217,22 +186,8 @@ public interface Flow<T> {
      */
     default Flow<T> take(long count) {
         if (count < 0) throw new IllegalArgumentException("count must be >= 0");
-
-        return flow(emitter -> {
-            if (count == 0) {
-                return;
-            }
-
-            try (var upstream = open()) {
-                var remaining = count;
-                for (var item : upstream) {
-                    emitter.emit(item);
-                    if (--remaining == 0) {
-                        break;
-                    }
-                }
-            }
-        });
+        if (count == 0) return Flows.empty();
+        return new TakeFlow<>(this, count);
     }
 
     /**
@@ -242,16 +197,7 @@ public interface Flow<T> {
      * @return a truncated flow
      */
     default Flow<T> takeWhile(Predicate<? super T> predicate) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (!predicate.test(item)) {
-                        break;
-                    }
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new TakeWhileFlow<>(this, predicate);
     }
 
     /**
@@ -263,19 +209,7 @@ public interface Flow<T> {
      */
     default Flow<T> drop(long count) {
         if (count < 0) throw new IllegalArgumentException("count must be >= 0");
-
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                var remaining = count;
-                for (var item : upstream) {
-                    if (remaining > 0) {
-                        remaining--;
-                        continue;
-                    }
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new DropFlow<>(this, count);
     }
 
     /**
@@ -285,18 +219,7 @@ public interface Flow<T> {
      * @return a flow without the leading values
      */
     default Flow<T> dropWhile(Predicate<? super T> predicate) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                var dropping = true;
-                for (var item : upstream) {
-                    if (dropping && predicate.test(item)) {
-                        continue;
-                    }
-                    dropping = false;
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new DropWhileFlow<>(this, predicate);
     }
 
     //#endregion
@@ -316,16 +239,7 @@ public interface Flow<T> {
      * @return a flow without duplicates
      */
     default Flow<T> distinct() {
-        return flow(emitter -> {
-            var seen = new HashSet<T>();
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (seen.add(item)) {
-                        emitter.emit(item);
-                    }
-                }
-            }
-        });
+        return new DistinctFlow<>(this);
     }
 
     /**
@@ -334,19 +248,7 @@ public interface Flow<T> {
      * @return a flow without adjacent duplicates
      */
     default Flow<T> distinctUntilChanged() {
-        return flow(emitter -> {
-            var last = (Object) null;
-            var hasLast = false;
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (!hasLast || !Objects.equals(item, last)) {
-                        emitter.emit(item);
-                        last = item;
-                        hasLast = true;
-                    }
-                }
-            }
-        });
+        return new DistinctUntilChangedFlow<>(this);
     }
 
     //#endregion
@@ -372,13 +274,7 @@ public interface Flow<T> {
      * @throws IllegalArgumentException if {@code bufferSize} is negative
      */
     default Flow<T> buffer(int bufferSize) {
-        return flow(bufferSize, emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new BufferFlow<>(this, bufferSize);
     }
 
     /**
@@ -400,25 +296,76 @@ public interface Flow<T> {
      */
     default Flow<List<T>> chunked(int size) {
         if (size <= 0) throw new IllegalArgumentException("size must be positive");
+        return new ChunkedFlow<>(this, size);
+    }
 
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                var chunk = new ArrayList<T>(size);
+    /**
+     * Returns a flow that groups values into lists produced at most once per {@code window}.
+     *
+     * <p>The timer starts when the first element of a batch arrives. Batches are not overlapping,
+     * and empty batches are not emitted. The final batch (if any) is emitted when the upstream completes.
+     *
+     * @param window maximum time to wait before emitting a batch. Must be positive.
+     * @return a flow of time-based batches
+     * @throws IllegalArgumentException if {@code window} is zero or negative
+     */
+    default Flow<List<T>> chunked(Duration window) {
+        if (window.isZero() || window.isNegative()) throw new IllegalArgumentException("window must be > 0");
+        return new ChunkedTimedFlow<>(this, window);
+    }
 
-                for (var item : upstream) {
-                    chunk.add(item);
+    /**
+     * Returns a flow that groups values into lists of up to {@code size}, emitting a batch
+     * when {@code size} is reached or {@code maxWait} elapses since the first element in the batch.
+     *
+     * <p>Batches are not overlapping, and empty batches are not emitted. The final batch (if any)
+     * is emitted when the upstream completes.
+     *
+     * @param size    maximum number of elements per batch. Must be positive.
+     * @param maxWait maximum time to wait before emitting a batch. Must be positive.
+     * @return a flow of size-or-time-based batches
+     * @throws IllegalArgumentException if {@code size} is not positive or {@code maxWait} is zero or negative
+     */
+    default Flow<List<T>> chunked(int size, Duration maxWait) {
+        if (size <= 0) throw new IllegalArgumentException("size must be positive");
+        if (maxWait.isZero() || maxWait.isNegative()) throw new IllegalArgumentException("maxWait must be > 0");
+        return new ChunkedTimedFlow<>(this, size, maxWait);
+    }
 
-                    if (chunk.size() == size) {
-                        emitter.emit(List.copyOf(chunk));
-                        chunk.clear();
-                    }
-                }
+    /**
+     * Returns a flow that emits sliding windows of the given size and step.
+     *
+     * <p>Windows are non-overlapping when {@code step == size}, and overlapping when
+     * {@code step < size}. Items that do not fall into any window (when {@code step > size})
+     * are dropped. Partial windows are not emitted.
+     *
+     * @param size window size. Must be positive.
+     * @param step number of elements between window starts. Must be positive.
+     * @return a flow of windows
+     * @throws IllegalArgumentException if {@code size} or {@code step} is not positive
+     */
+    default Flow<List<T>> windowed(int size, int step) {
+        if (size <= 0) throw new IllegalArgumentException("size must be positive");
+        if (step <= 0) throw new IllegalArgumentException("size must be positive");
+        return new WindowedSizeFlow<>(this, size, step);
+    }
 
-                if (!chunk.isEmpty()) {
-                    emitter.emit(List.copyOf(chunk));
-                }
-            }
-        });
+    /**
+     * Returns a flow that emits sliding time windows.
+     *
+     * <p>Windows start at the time of the first element and then every {@code step}. Each window
+     * spans {@code window} duration. Items are placed into all windows whose time ranges include them.
+     * Partial windows are emitted on completion. Empty windows are not emitted.
+     *
+     * @param window window duration. Must be positive.
+     * @param step   time between window starts. Must be positive.
+     * @return a flow of windows
+     * @throws IllegalArgumentException if {@code window} or {@code step} is zero or negative
+     */
+    default Flow<List<T>> windowed(Duration window, Duration step) {
+        if (window.isZero() || window.isNegative()) throw new IllegalArgumentException("window must be > 0");
+        if (step.isZero() || step.isNegative()) throw new IllegalArgumentException("step must be > 0");
+        return new WindowedTimedFlow<>(this, window, step);
     }
 
     //#endregion
@@ -434,18 +381,7 @@ public interface Flow<T> {
      */
     default Flow<T> delay(Duration delay) {
         if (delay.isNegative()) throw new IllegalArgumentException("delay must be >= 0");
-
-        return flow(emitter -> {
-            if (!delay.isZero()) {
-                Thread.sleep(delay);
-            }
-
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new DelayFlow<>(this, delay);
     }
 
     /**
@@ -457,17 +393,38 @@ public interface Flow<T> {
      */
     default Flow<T> delayEach(Duration delay) {
         if (delay.isNegative()) throw new IllegalArgumentException("delay must be >= 0");
+        return new DelayEachFlow<>(this, delay);
+    }
 
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    if (!delay.isZero()) {
-                        Thread.sleep(delay);
-                    }
-                    emitter.emit(item);
-                }
-            }
-        });
+    /**
+     * Returns a flow that emits the latest value only after the flow has been idle for {@code timeout}.
+     *
+     * <p>Each new value resets the timer. When the upstream completes, the latest value (if any)
+     * is emitted immediately.
+     *
+     * @param timeout idle time required before emitting. Must be positive.
+     * @return a debounced flow
+     * @throws IllegalArgumentException if {@code timeout} is zero or negative
+     */
+    default Flow<T> debounce(Duration timeout) {
+        if (timeout.isZero() || timeout.isNegative()) throw new IllegalArgumentException("timeout must be > 0");
+        return new DebounceFlow<>(this, timeout);
+    }
+
+    /**
+     * Returns a flow that emits the latest value at most once per {@code period}.
+     *
+     * <p>Each period emits the most recent value arrived since the last emission.
+     * If no value arrived during a period, nothing is emitted. When the upstream completes,
+     * the latest pending value (if any) is emitted immediately.
+     *
+     * @param period sampling period. Must be positive.
+     * @return a sampled flow
+     * @throws IllegalArgumentException if {@code period} is zero or negative
+     */
+    default Flow<T> sample(Duration period) {
+        if (period.isZero() || period.isNegative()) throw new IllegalArgumentException("period must be > 0");
+        return new SampleFlow<>(this, period);
     }
 
     /**
@@ -483,63 +440,7 @@ public interface Flow<T> {
      */
     default Flow<T> timeout(Duration timeout) {
         if (timeout.isZero() || timeout.isNegative()) throw new IllegalArgumentException("timeout must be > 0");
-
-        return flow(emitter -> {
-            var stop = new Object();
-            var timeoutNanos = timeout.toNanos();
-            var queue = new SynchronousQueue<>();
-            var error = new AtomicReference<@Nullable Throwable>();
-
-            var upstreamThread = Thread.ofVirtual().name("flow-timeout-upstream-").start(() -> {
-                try (var upstream = open()) {
-                    for (var item : upstream) {
-                        queue.put(item);
-                    }
-                } catch (Throwable t) {
-                    error.set(t);
-                } finally {
-                    try {
-                        queue.put(stop);
-                    } catch (InterruptedException ignored) {
-                    }
-                }
-            });
-
-            try {
-                while (true) {
-                    Object element;
-
-                    try {
-                        element = queue.poll(timeoutNanos, TimeUnit.NANOSECONDS);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw sneakyThrow(e);
-                    }
-
-                    if (element == null) {
-                        upstreamThread.interrupt();
-                        throw new TimeoutException("Flow timed out after " + timeout);
-                    }
-
-                    if (element == stop) {
-                        var throwable = error.get();
-                        if (throwable != null) {
-                            if (throwable instanceof InterruptedException) {
-                                Thread.currentThread().interrupt();
-                            }
-                            throw sneakyThrow(throwable);
-                        }
-                        return;
-                    }
-
-                    @SuppressWarnings("unchecked")
-                    var value = (T) element;
-                    emitter.emit(value);
-                }
-            } finally {
-                upstreamThread.interrupt();
-            }
-        });
+        return new TimeoutFlow<>(this, timeout);
     }
     //#endregion
 
@@ -552,19 +453,7 @@ public interface Flow<T> {
      * @return a concatenated flow
      */
     default Flow<T> concat(Flow<? extends T> other) {
-        return flow(emitter -> {
-            try (var upstream = open()) {
-                for (var item : upstream) {
-                    emitter.emit(item);
-                }
-            }
-
-            try (var downstream = other.open()) {
-                for (var item : downstream) {
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new ConcatFlow<>(this, other);
     }
 
     /**
@@ -582,16 +471,7 @@ public interface Flow<T> {
             Flow<? extends U> other,
             BiFunction<? super T, ? super U, ? extends R> zipper
     ) {
-        return flow(emitter -> {
-            try (var left = open(); var right = other.open()) {
-                var leftIter = left.iterator();
-                var rightIter = right.iterator();
-                while (leftIter.hasNext() && rightIter.hasNext()) {
-                    var zipped = zipper.apply(leftIter.next(), rightIter.next());
-                    emitter.emit(zipped);
-                }
-            }
-        });
+        return new ZipFlow<>(this, other, zipper);
     }
 
     //#endregion
@@ -609,13 +489,7 @@ public interface Flow<T> {
      * @throws NoSuchElementException if the flow is empty
      */
     default T first() {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                return item;
-            }
-        }
-
-        throw new NoSuchElementException("Flow is empty");
+        return new FirstTerminal<>(this).evaluate();
     }
 
     /**
@@ -624,13 +498,7 @@ public interface Flow<T> {
      * @return the first element, or {@code null} if empty
      */
     default @Nullable T firstOrNull() {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                return item;
-            }
-        }
-
-        return null;
+        return new FirstOrNullTerminal<>(this).evaluate();
     }
 
     /**
@@ -640,13 +508,7 @@ public interface Flow<T> {
      * @return the first element or the default value
      */
     default T firstOrDefault(T defaultValue) {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                return item;
-            }
-        }
-
-        return defaultValue;
+        return new FirstOrDefaultTerminal<>(this, defaultValue).evaluate();
     }
 
     /**
@@ -656,19 +518,7 @@ public interface Flow<T> {
      * @throws NoSuchElementException if the flow is empty
      */
     default T last() {
-        try (var upstream = open()) {
-            T last = null;
-
-            for (var item : upstream) {
-                last = item;
-            }
-
-            if (last == null) {
-                throw new NoSuchElementException("Flow is empty");
-            }
-
-            return last;
-        }
+        return new LastTerminal<>(this).evaluate();
     }
 
     /**
@@ -677,15 +527,7 @@ public interface Flow<T> {
      * @return the last element or {@code null}
      */
     default @Nullable T lastOrNull() {
-        try (var upstream = open()) {
-            T last = null;
-
-            for (var item : upstream) {
-                last = item;
-            }
-
-            return last;
-        }
+        return new LastOrNullTerminal<>(this).evaluate();
     }
 
     /**
@@ -695,15 +537,7 @@ public interface Flow<T> {
      * @return the last element or the default value
      */
     default T lastOrDefault(T defaultValue) {
-        try (var upstream = open()) {
-            T last = null;
-
-            for (var item : upstream) {
-                last = item;
-            }
-
-            return last == null ? defaultValue : last;
-        }
+        return new LastOrDefaultTerminal<>(this, defaultValue).evaluate();
     }
 
     /**
@@ -714,21 +548,7 @@ public interface Flow<T> {
      * @throws IllegalStateException  if the flow has more than one element
      */
     default T single() {
-        try (var upstream = open()) {
-            var iterator = upstream.iterator();
-
-            if (!iterator.hasNext()) {
-                throw new NoSuchElementException("Flow is empty");
-            }
-
-            var value = iterator.next();
-
-            if (iterator.hasNext()) {
-                throw new IllegalStateException("Flow has more than one element");
-            }
-
-            return value;
-        }
+        return new SingleTerminal<>(this).evaluate();
     }
 
     /**
@@ -738,21 +558,7 @@ public interface Flow<T> {
      * @throws IllegalStateException if the flow has more than one element
      */
     default @Nullable T singleOrNull() {
-        try (var upstream = open()) {
-            var iterator = upstream.iterator();
-
-            if (!iterator.hasNext()) {
-                return null;
-            }
-
-            var value = iterator.next();
-
-            if (iterator.hasNext()) {
-                throw new IllegalStateException("Flow has more than one element");
-            }
-
-            return value;
-        }
+        return new SingleOrNullTerminal<>(this).evaluate();
     }
 
     /**
@@ -763,21 +569,7 @@ public interface Flow<T> {
      * @throws IllegalStateException if the flow has more than one element
      */
     default T singleOrDefault(T defaultValue) {
-        try (var upstream = open()) {
-            var iterator = upstream.iterator();
-
-            if (!iterator.hasNext()) {
-                return defaultValue;
-            }
-
-            var value = iterator.next();
-
-            if (iterator.hasNext()) {
-                throw new IllegalStateException("Flow has more than one element");
-            }
-
-            return value;
-        }
+        return new SingleOrDefaultTerminal<>(this, defaultValue).evaluate();
     }
 
     //#endregion
@@ -793,14 +585,7 @@ public interface Flow<T> {
      * @return {@code true} if any element matches
      */
     default boolean any(Predicate<? super T> predicate) {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                if (predicate.test(item)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return new AnyTerminal<>(this, predicate).evaluate();
     }
 
     /**
@@ -812,14 +597,7 @@ public interface Flow<T> {
      * @return {@code true} if all elements match
      */
     default boolean all(Predicate<? super T> predicate) {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                if (!predicate.test(item)) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return new AllTerminal<>(this, predicate).evaluate();
     }
 
     /**
@@ -831,14 +609,7 @@ public interface Flow<T> {
      * @return {@code true} if no elements match
      */
     default boolean none(Predicate<? super T> predicate) {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                if (predicate.test(item)) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return new NoneTerminal<>(this, predicate).evaluate();
     }
 
     //#endregion
@@ -851,13 +622,7 @@ public interface Flow<T> {
      * @return element count
      */
     default long count() {
-        var count = 0L;
-        try (var upstream = open()) {
-            for (var ignored : upstream) {
-                count++;
-            }
-        }
-        return count;
+        return new CountTerminal<>(this).evaluate();
     }
 
     /**
@@ -876,21 +641,7 @@ public interface Flow<T> {
      * @throws NoSuchElementException if the flow is empty
      */
     default T reduce(BinaryOperator<T> reducer) {
-        try (var upstream = open()) {
-            var iter = upstream.iterator();
-
-            if (!iter.hasNext()) {
-                throw new NoSuchElementException("Flow is empty");
-            }
-
-            var value = iter.next();
-
-            while (iter.hasNext()) {
-                value = reducer.apply(value, iter.next());
-            }
-
-            return value;
-        }
+        return new ReduceTerminal<>(this, reducer).evaluate();
     }
 
     /**
@@ -910,13 +661,7 @@ public interface Flow<T> {
      * @return the accumulated value
      */
     default <R> R fold(R initial, BiFunction<? super R, ? super T, ? extends R> accumulator) {
-        var result = initial;
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                result = accumulator.apply(result, item);
-            }
-        }
-        return result;
+        return new FoldTerminal<>(this, initial, accumulator).evaluate();
     }
 
     //#endregion
@@ -929,13 +674,7 @@ public interface Flow<T> {
      * @return list of all elements
      */
     default List<T> toList() {
-        var list = new ArrayList<T>();
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                list.add(item);
-            }
-        }
-        return list;
+        return new ToListTerminal<>(this).evaluate();
     }
 
     /**
@@ -944,13 +683,7 @@ public interface Flow<T> {
      * @return set of all elements
      */
     default Set<T> toSet() {
-        var set = new LinkedHashSet<T>();
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                set.add(item);
-            }
-        }
-        return set;
+        return new ToSetTerminal<>(this).evaluate();
     }
 
     /**
@@ -961,13 +694,7 @@ public interface Flow<T> {
      * @return the populated collection
      */
     default <C extends Collection<T>> C toCollection(Supplier<C> supplier) {
-        var collection = supplier.get();
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                collection.add(item);
-            }
-        }
-        return collection;
+        return new ToCollectionTerminal<>(this, supplier).evaluate();
     }
 
     //#endregion
@@ -989,11 +716,7 @@ public interface Flow<T> {
      * @throws E if the collector or producer throws an exception
      */
     default <E extends Exception> void collect(Collector<? super T, E> collector) throws E {
-        try (var upstream = open()) {
-            for (var item : upstream) {
-                collector.accept(item);
-            }
-        }
+        new CollectTerminal<>(this, collector).run();
     }
 
     //#endregion
@@ -1013,12 +736,7 @@ public interface Flow<T> {
      * @return a sequential stream
      */
     default Stream<T> stream() {
-        var sequence = open();
-        var characteristics = Spliterator.ORDERED | Spliterator.NONNULL;
-        return StreamSupport.stream(
-                Spliterators.spliteratorUnknownSize(sequence.iterator(), characteristics),
-                false
-        ).onClose(sequence::close);
+        return new StreamTerminal<>(this).evaluate();
     }
 
     //#endregion

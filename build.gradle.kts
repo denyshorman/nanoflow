@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.denyshorman"
-version = "0.1.1-SNAPSHOT"
+version = "0.1.2-SNAPSHOT"
 
 java {
     toolchain {
@@ -53,7 +53,8 @@ publishing {
             from(components["java"])
             pom {
                 name = "Nanoflow"
-                description = "A tiny, simple flow implementation for Java."
+                description = "Flow library for Java 21+ with imperative iteration, virtual‑thread‑native backpressure, " +
+                        "cooperative cancellation, and transparent checked exceptions."
                 url = "https://github.com/denyshorman/nanoflow"
                 inceptionYear = "2026"
                 licenses {

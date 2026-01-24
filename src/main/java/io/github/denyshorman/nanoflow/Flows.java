@@ -1,17 +1,15 @@
 package io.github.denyshorman.nanoflow;
 
-import io.github.denyshorman.nanoflow.internal.sequence.BufferedSequence;
-import io.github.denyshorman.nanoflow.internal.sequence.EmptySequence;
+import io.github.denyshorman.nanoflow.internal.flow.producer.*;
 
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Flow.Publisher;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
-
-import static io.github.denyshorman.nanoflow.internal.util.SneakyThrow.sneakyThrow;
 
 /**
  * Factory and generator methods for {@link Flow}.
@@ -70,7 +68,7 @@ public final class Flows {
      * @return a new flow
      */
     public static <T> Flow<T> flow(Flow.Action<T> action) {
-        return () -> new BufferedSequence<>(0, action);
+        return new BufferedFlow<>(action);
     }
 
     /**
@@ -99,7 +97,7 @@ public final class Flows {
      * @throws IllegalArgumentException if {@code bufferSize} is negative
      */
     public static <T> Flow<T> flow(int bufferSize, Flow.Action<T> action) {
-        return () -> new BufferedSequence<>(bufferSize, action);
+        return new BufferedFlow<>(bufferSize, action);
     }
     //#endregion
 
@@ -112,7 +110,7 @@ public final class Flows {
      * @return an empty flow
      */
     public static <T> Flow<T> empty() {
-        return EmptySequence::instance;
+        return EmptyFlow.instance();
     }
 
     /**
@@ -122,7 +120,7 @@ public final class Flows {
      * @return a never-ending flow
      */
     public static <T> Flow<T> never() {
-        return flow(emitter -> Thread.sleep(Long.MAX_VALUE));
+        return new NeverFlow<>();
     }
 
     /**
@@ -133,9 +131,7 @@ public final class Flows {
      * @return a failing flow
      */
     public static <T> Flow<T> error(Throwable error) {
-        return flow(emitter -> {
-            throw sneakyThrow(error);
-        });
+        return new ErrorFlow<>(error);
     }
 
     /**
@@ -146,13 +142,7 @@ public final class Flows {
      * @return a deferred flow
      */
     public static <T> Flow<T> defer(Supplier<? extends Flow<? extends T>> supplier) {
-        return flow(emitter -> {
-            try (var upstream = supplier.get().open()) {
-                for (var item : upstream) {
-                    emitter.emit(item);
-                }
-            }
-        });
+        return new DeferFlow<>(supplier);
     }
 
     //#endregion
@@ -168,15 +158,7 @@ public final class Flows {
      */
     @SafeVarargs
     public static <T> Flow<T> concat(Flow<? extends T>... flows) {
-        return flow(emitter -> {
-            for (var f : flows) {
-                try (var items = f.open()) {
-                    for (var item : items) {
-                        emitter.emit(item);
-                    }
-                }
-            }
-        });
+        return new ConcatFlow<>(flows);
     }
 
     //#endregion
@@ -195,11 +177,7 @@ public final class Flows {
      * @return a flow over the iterable
      */
     public static <T> Flow<T> from(Iterable<? extends T> items) {
-        return flow(emitter -> {
-            for (var item : items) {
-                emitter.emit(item);
-            }
-        });
+        return new IterableFlow<>(items);
     }
 
     /**
@@ -215,15 +193,21 @@ public final class Flows {
      * @return a flow over the stream
      */
     public static <T> Flow<T> from(Stream<? extends T> stream) {
-        return flow(emitter -> {
-            try (stream) {
-                var it = stream.iterator();
+        return new StreamFlow<>(stream);
+    }
 
-                while (it.hasNext()) {
-                    emitter.emit(it.next());
-                }
-            }
-        });
+    /**
+     * Returns a flow that emits values from the given publisher.
+     *
+     * <p>The publisher is subscribed each time the flow is opened. If the publisher only
+     * supports a single subscription, this flow can be opened only once.
+     *
+     * @param publisher source publisher. Must not be null.
+     * @param <T>       value type
+     * @return a flow over the publisher
+     */
+    public static <T> Flow<T> from(Publisher<? extends T> publisher) {
+        return new PublisherFlow<>(publisher);
     }
 
     //#endregion
@@ -244,11 +228,7 @@ public final class Flows {
      * @return a flow over the queue
      */
     public static <T> Flow<T> from(BlockingQueue<? extends T> queue) {
-        return flow(emitter -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                emitter.emit(queue.take());
-            }
-        });
+        return new BlockingQueueFlow<>(queue);
     }
 
     /**
@@ -263,7 +243,7 @@ public final class Flows {
      * @return a flow over the queue
      */
     public static <T> Flow<T> from(BlockingQueue<? extends T> queue, T stopToken) {
-        return from(queue, item -> Objects.equals(item, stopToken));
+        return new BlockingQueueFlow<>(queue, item -> Objects.equals(item, stopToken));
     }
 
     /**
@@ -278,15 +258,7 @@ public final class Flows {
      * @return a flow over the queue
      */
     public static <T> Flow<T> from(BlockingQueue<? extends T> queue, Predicate<? super T> isStop) {
-        return flow(emitter -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                var item = queue.take();
-                if (isStop.test(item)) {
-                    return;
-                }
-                emitter.emit(item);
-            }
-        });
+        return new BlockingQueueFlow<>(queue, isStop);
     }
 
     //#endregion
@@ -298,8 +270,7 @@ public final class Flows {
      *
      * <p>Example:
      * <pre>{@code
-     * Flows.of("Hello", "World")
-     *     .toList(); // ["Hello", "World"]
+     * Flows.of("Hello", "World").toList(); // ["Hello", "World"]
      * }</pre>
      *
      * @param items items to emit
@@ -308,11 +279,7 @@ public final class Flows {
      */
     @SafeVarargs
     public static <T> Flow<T> of(T... items) {
-        return flow(emitter -> {
-            for (var item : items) {
-                emitter.emit(item);
-            }
-        });
+        return items.length == 0 ? empty() : new ArrayFlow<>(items);
     }
 
     //#endregion
@@ -335,11 +302,7 @@ public final class Flows {
      * @return a flow over the range
      */
     public static Flow<Integer> range(int startInclusive, int endExclusive) {
-        return flow(emitter -> {
-            for (var i = startInclusive; i < endExclusive; i++) {
-                emitter.emit(i);
-            }
-        });
+        return new RangeExclusiveFlow(startInclusive, endExclusive);
     }
 
     /**
@@ -350,11 +313,7 @@ public final class Flows {
      * @return a flow over the closed range
      */
     public static Flow<Integer> rangeClosed(int startInclusive, int endInclusive) {
-        return flow(emitter -> {
-            for (long i = startInclusive; i <= endInclusive; i++) {
-                emitter.emit((int) i);
-            }
-        });
+        return new RangeInclusiveFlow(startInclusive, endInclusive);
     }
 
     //#endregion
@@ -376,11 +335,7 @@ public final class Flows {
      * @return a generated flow
      */
     public static <T> Flow<T> generate(Supplier<? extends T> supplier) {
-        return flow(emitter -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                emitter.emit(supplier.get());
-            }
-        });
+        return new GenerateFlow<>(supplier);
     }
 
     /**
@@ -396,11 +351,7 @@ public final class Flows {
         if (count < 0) throw new IllegalArgumentException("count must be >= 0");
         if (count == 0) return empty();
 
-        return flow(emitter -> {
-            for (var i = 0L; i < count; i++) {
-                emitter.emit(supplier.get());
-            }
-        });
+        return new GenerateCountFlow<>(count, supplier);
     }
 
     //#endregion
@@ -423,13 +374,7 @@ public final class Flows {
      * @return an iterative flow
      */
     public static <T> Flow<T> iterate(T seed, UnaryOperator<T> next) {
-        return flow(emitter -> {
-            var current = seed;
-            while (!Thread.currentThread().isInterrupted()) {
-                emitter.emit(current);
-                current = next.apply(current);
-            }
-        });
+        return new IterateFlow<>(seed, next);
     }
 
     /**
@@ -446,13 +391,7 @@ public final class Flows {
             Predicate<? super T> hasNext,
             UnaryOperator<T> next
     ) {
-        return flow(emitter -> {
-            var current = seed;
-            while (hasNext.test(current) && !Thread.currentThread().isInterrupted()) {
-                emitter.emit(current);
-                current = next.apply(current);
-            }
-        });
+        return new IterateWhileFlow<>(seed, hasNext, next);
     }
 
     //#endregion
@@ -467,11 +406,7 @@ public final class Flows {
      * @return a repeating flow
      */
     public static <T> Flow<T> repeat(T value) {
-        return flow(emitter -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                emitter.emit(value);
-            }
-        });
+        return new RepeatFlow<>(value);
     }
 
     /**
@@ -486,11 +421,7 @@ public final class Flows {
     public static <T> Flow<T> repeat(long count, T value) {
         if (count < 0) throw new IllegalArgumentException("count must be >= 0");
 
-        return flow(emitter -> {
-            for (var i = 0L; i < count; i++) {
-                emitter.emit(value);
-            }
-        });
+        return new RepeatCountFlow<>(count, value);
     }
 
     //#endregion
@@ -507,12 +438,7 @@ public final class Flows {
     public static Flow<Long> timer(Duration delay) {
         if (delay.isNegative()) throw new IllegalArgumentException("delay must be >= 0");
 
-        return flow(emitter -> {
-            if (!delay.isZero()) {
-                Thread.sleep(delay);
-            }
-            emitter.emit(0L);
-        });
+        return new TimerFlow(delay);
     }
 
     /**
@@ -540,18 +466,7 @@ public final class Flows {
         if (initialDelay.isNegative()) throw new IllegalArgumentException("initialDelay must be >= 0");
         if (period.isZero() || period.isNegative()) throw new IllegalArgumentException("period must be > 0");
 
-        return flow(emitter -> {
-            if (!initialDelay.isZero()) {
-                Thread.sleep(initialDelay);
-            }
-
-            var tick = 0L;
-
-            while (!Thread.currentThread().isInterrupted()) {
-                emitter.emit(tick++);
-                Thread.sleep(period);
-            }
-        });
+        return new IntervalFlow(initialDelay, period);
     }
 
     //#endregion
