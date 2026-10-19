@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.denyshorman"
-version = "0.1.2-SNAPSHOT"
+version = "0.1.3-SNAPSHOT"
 
 java {
     toolchain {

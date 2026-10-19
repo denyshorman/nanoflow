@@ -44,10 +44,17 @@ public class BufferedSequence<T> implements Flow.Sequence<T> {
                     error.set(t);
                 }
             } finally {
-                if (!closed) {
-                    try {
+                var wasInterrupted = Thread.interrupted();
+
+                try {
+                    if (!closed) {
                         queue.put(STOP);
-                    } catch (InterruptedException ignored) {
+                    }
+                } catch (InterruptedException ignored) {
+                    wasInterrupted = true;
+                } finally {
+                    if (wasInterrupted) {
+                        Thread.currentThread().interrupt();
                     }
                 }
             }

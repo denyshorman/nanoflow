@@ -12,6 +12,7 @@ public class UpstreamPump<T> {
     private final Object stop = new Object();
     private final SynchronousQueue<Object> queue = new SynchronousQueue<>();
     private final AtomicReference<@Nullable Throwable> error = new AtomicReference<>();
+    private volatile boolean closed = false;
 
     public UpstreamPump(Flow<? extends T> upstream) {
         this(upstream, Function.identity());
@@ -24,11 +25,22 @@ public class UpstreamPump<T> {
                     queue.put(mapper.apply(item));
                 }
             } catch (Throwable t) {
-                error.set(t);
+                if (!closed) {
+                    error.set(t);
+                }
             } finally {
+                var wasInterrupted = Thread.interrupted();
+
                 try {
-                    queue.put(stop);
+                    if (!closed) {
+                        queue.put(stop);
+                    }
                 } catch (InterruptedException ignored) {
+                    wasInterrupted = true;
+                } finally {
+                    if (wasInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             }
         });
@@ -47,6 +59,9 @@ public class UpstreamPump<T> {
     }
 
     public void interrupt() {
-        thread.interrupt();
+        if (!closed) {
+            closed = true;
+            thread.interrupt();
+        }
     }
 }
