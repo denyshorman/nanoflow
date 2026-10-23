@@ -809,5 +809,81 @@ public interface Flow<T> {
         void accept(T value) throws E;
     }
 
+    /**
+     * A hot {@link Flow} that holds a current state value and emits updates to subscribers.
+     *
+     * <p>The current value can be read synchronously at any time via {@link #get()}.
+     * Opening a {@code State} immediately emits its current value, followed by any subsequent
+     * distinct updates.
+     *
+     * <p>Emissions are conflated and deduplicated using {@link Objects#equals(Object, Object)}:
+     * equal consecutive values are not emitted, and slow consumers automatically skip intermediate
+     * updates to receive only the latest value.
+     *
+     * <p>A {@code State} never completes normally. Closing the {@link Sequence} (for example,
+     * by breaking out of a {@code for} loop in a try-with-resources block) unsubscribes that
+     * consumer without affecting other subscribers.
+     *
+     * @param <T> the state value type
+     * @see MutableState
+     * @see Flows#state(Object)
+     */
+    interface State<T> extends Flow<T>, Supplier<T> {
+        /**
+         * Returns the current value.
+         *
+         * @return the current value
+         */
+        @Override
+        T get();
+    }
+
+    /**
+     * A mutable {@link State} that supports thread-safe, non-blocking value updates.
+     *
+     * <p>When the value is updated to a new value that is not equal to the previous value
+     * according to {@link Objects#equals(Object, Object)}, all open subscribers are notified.
+     *
+     * @param <T> the state value type
+     * @see State
+     * @see Flows#state(Object)
+     */
+    interface MutableState<T> extends State<T> {
+        /**
+         * Sets the current value to {@code value}.
+         *
+         * @param value new value
+         */
+        void set(T value);
+
+        /**
+         * Atomically sets the value to {@code update} if the current value equals
+         * {@code expect} according to {@link Objects#equals(Object, Object)}.
+         *
+         * @param expect expected current value
+         * @param update new value
+         * @return {@code true} if updated, {@code false} if the current value was not equal to {@code expect}
+         */
+        boolean compareAndSet(T expect, T update);
+
+        /**
+         * Atomically updates the current value using {@code function} and returns the new value.
+         *
+         * <p>Because {@code function} may be invoked more than once under contention,
+         * it should be side-effect-free.
+         *
+         * @param function function to compute the new value
+         * @return the updated value
+         */
+        T update(UnaryOperator<T> function);
+
+        /**
+         * Returns a read-only {@link State} view of this mutable state.
+         *
+         * @return a read-only state view
+         */
+        State<T> asState();
+    }
+
     //#endregion
 }

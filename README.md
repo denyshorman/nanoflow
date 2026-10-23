@@ -22,6 +22,7 @@ try (var items = flow.open()) {
 - [The Core Model](#the-core-model)
 - [Why This Approach?](#why-this-approach)
 - [Creating Flows](#creating-flows)
+- [State Flows](#state-flows)
 - [Operators](#operators)
   - [Intermediate Operators](#intermediate-operators)
   - [Terminal Operators](#terminal-operators)
@@ -197,6 +198,40 @@ var never = Flows.<String>never();                    // Never completes
 var error = Flows.<String>error(new IOException());   // Fails immediately
 var deferred = Flows.defer(() -> Flows.of("lazy"));   // Created on each subscription
 ```
+
+## State Flows
+
+`Flow.State<T>` and `Flow.MutableState<T>` represent a hot state holder that always has a current value (readable via `get()`) and allows multiple consumers to subscribe to value changes.
+
+```java
+var count = Flows.state(0);
+
+// Read current value synchronously
+int current = count.get(); // 0
+
+// Update state (thread-safe and non-blocking)
+count.set(1);
+count.update(n -> n + 1);       // 2
+count.compareAndSet(2, 10);     // true
+
+// Expose a read-only view
+Flow.State<Integer> readOnly = count.asState();
+
+// Subscribe to changes
+try (var changes = readOnly.open()) {
+    for (var value : changes) {
+        System.out.println("Value: " + value);
+        if (value >= 10) break; // Unsubscribes this consumer
+    }
+}
+```
+
+### Key Characteristics
+
+*   **Always Has a Value**: Initialized with a starting value; `get()` returns the latest snapshot at any time (and implements `Supplier<T>`).
+*   **Immediate Replay**: Opening a state flow immediately emits its current value, followed by subsequent updates.
+*   **Conflated & Deduplicated**: Equal consecutive values (`Objects.equals`) are ignored, and slow consumers automatically skip intermediate updates to receive only the latest value.
+*   **Multicast**: Multiple consumers can `open()` the same state flow concurrently; closing a sequence only unsubscribes that consumer.
 
 ## Operators
 

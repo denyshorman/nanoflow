@@ -99,6 +99,20 @@ public final class Flows {
     public static <T> Flow<T> flow(int bufferSize, Flow.Action<T> action) {
         return new BufferedFlow<>(bufferSize, action);
     }
+
+    /**
+     * Creates a {@link Flow.MutableState} with the given initial value.
+     *
+     * <p>The returned state holds the latest value (accessible via {@link Flow.State#get()})
+     * and notifies open subscribers whenever the value changes to a distinct value.
+     *
+     * @param initialValue initial state value
+     * @param <T>          value type
+     * @return a new mutable state
+     */
+    public static <T> Flow.MutableState<T> state(T initialValue) {
+        return new StateFlow<>(initialValue);
+    }
     //#endregion
 
     //#region Lifecycle
