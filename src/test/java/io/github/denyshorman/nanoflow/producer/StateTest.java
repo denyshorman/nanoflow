@@ -1,6 +1,5 @@
 package io.github.denyshorman.nanoflow.producer;
 
-import io.github.denyshorman.nanoflow.Flow;
 import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Test;
 
@@ -125,6 +124,7 @@ class StateTest {
         var state = Flows.state("v1");
         var sub1Ready = new CountDownLatch(1);
         var sub2Ready = new CountDownLatch(1);
+        var sub2ReceivedV2 = new CountDownLatch(1);
         var list1 = new CopyOnWriteArrayList<String>();
         var list2 = new CopyOnWriteArrayList<String>();
 
@@ -145,6 +145,7 @@ class StateTest {
                     list2.add(item);
 
                     if (item.equals("v1")) sub2Ready.countDown();
+                    if (item.equals("v2")) sub2ReceivedV2.countDown();
                     if (item.equals("v3")) break;
                 }
             }
@@ -155,25 +156,13 @@ class StateTest {
 
         state.set("v2");
         t1.join(5000);
+        assertTrue(sub2ReceivedV2.await(5, TimeUnit.SECONDS));
 
         state.set("v3");
         t2.join(5000);
 
         assertEquals(List.of("v1", "v2"), list1);
         assertEquals(List.of("v1", "v2", "v3"), list2);
-    }
-
-    @Test
-    void shouldProvideReadOnlyViewViaAsState() {
-        var mutable = Flows.state(1);
-        Flow.State<Integer> readOnly = mutable.asState();
-
-        assertFalse(readOnly instanceof Flow.MutableState);
-        assertEquals(1, readOnly.get());
-
-        mutable.set(2);
-        assertEquals(2, readOnly.get());
-        assertEquals(2, readOnly.first());
     }
 
     @Test

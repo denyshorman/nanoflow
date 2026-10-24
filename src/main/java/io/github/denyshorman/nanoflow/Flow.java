@@ -876,13 +876,6 @@ public interface Flow<T> {
          * @return the updated value
          */
         T update(UnaryOperator<T> function);
-
-        /**
-         * Returns a read-only {@link State} view of this mutable state.
-         *
-         * @return a read-only state view
-         */
-        State<T> asState();
     }
 
     //#endregion

@@ -67,11 +67,6 @@ public class StateFlow<T> implements Flow.MutableState<T> {
     }
 
     @Override
-    public Flow.State<T> asState() {
-        return new ReadOnlyStateFlow<>(this);
-    }
-
-    @Override
     public Sequence<T> open() {
         return new StateSequence<>(value::get, subscribers);
     }
@@ -79,18 +74,6 @@ public class StateFlow<T> implements Flow.MutableState<T> {
     private void notifySubscribers() {
         for (var subscriber : subscribers) {
             subscriber.wakeUp();
-        }
-    }
-
-    private record ReadOnlyStateFlow<T>(Flow.State<T> delegate) implements Flow.State<T> {
-        @Override
-        public T get() {
-            return delegate.get();
-        }
-
-        @Override
-        public Sequence<T> open() {
-            return delegate.open();
         }
     }
 }

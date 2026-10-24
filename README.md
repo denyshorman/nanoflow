@@ -214,8 +214,8 @@ count.set(1);
 count.update(n -> n + 1);       // 2
 count.compareAndSet(2, 10);     // true
 
-// Expose a read-only view
-Flow.State<Integer> readOnly = count.asState();
+// Expose as a read-only State
+Flow.State<Integer> readOnly = count;
 
 // Subscribe to changes
 try (var changes = readOnly.open()) {
