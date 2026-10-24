@@ -878,5 +878,30 @@ public interface Flow<T> {
         T update(UnaryOperator<T> function);
     }
 
+    /**
+     * A hot multicast {@link Flow} that broadcasts emitted values to all open subscribers.
+     *
+     * <p>Values emitted via {@link #emit(Object)} are delivered to every subscriber that is
+     * currently {@link #open() open}. Emitting when there are no open subscribers is a no-op.
+     * Subscribers only receive values emitted after they open the flow.
+     *
+     * <p>Calling {@link #close()} completes the broadcast, causing all active and subsequent
+     * subscribers' sequences to finish once any buffered elements have been consumed.
+     *
+     * @param <T> the emitted value type
+     * @see Flows#broadcast()
+     * @see Flows#broadcast(int)
+     */
+    interface Broadcast<T> extends Flow<T>, Emitter<T>, AutoCloseable {
+        /**
+         * Completes this broadcast flow.
+         *
+         * <p>All currently open subscribers will complete after consuming any buffered elements,
+         * and any future calls to {@link #open()} will return an empty sequence.
+         */
+        @Override
+        void close();
+    }
+
     //#endregion
 }

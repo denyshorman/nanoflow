@@ -113,6 +113,38 @@ public final class Flows {
     public static <T> Flow.MutableState<T> state(T initialValue) {
         return new StateFlow<>(initialValue);
     }
+
+    /**
+     * Creates a {@link Flow.Broadcast} with synchronous handoff (buffer size 0).
+     *
+     * <p>Each call to {@link Flow.Broadcast#emit(Object)} waits until all currently open
+     * subscribers have received the value.
+     *
+     * @param <T> value type
+     * @return a new broadcast flow
+     */
+    public static <T> Flow.Broadcast<T> broadcast() {
+        return new BroadcastFlow<>(0);
+    }
+
+    /**
+     * Creates a {@link Flow.Broadcast} with the given per-subscriber buffer capacity.
+     *
+     * @param bufferSize the number of elements that can be buffered per subscriber before
+     *                   {@link Flow.Broadcast#emit(Object)} blocks.
+     *                   <ul>
+     *                   <li><b>Positive value:</b> Creates a buffer of the specified capacity per subscriber.</li>
+     *                   <li><b>0:</b> Synchronous handoff with each subscriber.</li>
+     *                   <li><b>{@link Integer#MAX_VALUE}:</b> Effectively unbounded buffer per subscriber.</li>
+     *                   </ul>
+     * @param <T>        value type
+     * @return a new broadcast flow
+     * @throws IllegalArgumentException if {@code bufferSize} is negative
+     */
+    public static <T> Flow.Broadcast<T> broadcast(int bufferSize) {
+        if (bufferSize < 0) throw new IllegalArgumentException("bufferSize must be >= 0");
+        return new BroadcastFlow<>(bufferSize);
+    }
     //#endregion
 
     //#region Lifecycle

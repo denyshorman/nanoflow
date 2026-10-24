@@ -23,6 +23,7 @@ try (var items = flow.open()) {
 - [Why This Approach?](#why-this-approach)
 - [Creating Flows](#creating-flows)
 - [State Flows](#state-flows)
+- [Broadcast Flows](#broadcast-flows)
 - [Operators](#operators)
   - [Intermediate Operators](#intermediate-operators)
   - [Terminal Operators](#terminal-operators)
@@ -232,6 +233,37 @@ try (var changes = readOnly.open()) {
 *   **Immediate Replay**: Opening a state flow immediately emits its current value, followed by subsequent updates.
 *   **Conflated & Deduplicated**: Equal consecutive values (`Objects.equals`) are ignored, and slow consumers automatically skip intermediate updates to receive only the latest value.
 *   **Multicast**: Multiple consumers can `open()` the same state flow concurrently; closing a sequence only unsubscribes that consumer.
+
+## Broadcast Flows
+
+`Flow.Broadcast<T>` is a hot multicast event stream that delivers every emitted value to all currently open subscribers across threads.
+
+```java
+// Buffer up to 16 events per subscriber (or Flows.broadcast() for synchronous handoff)
+try (var broadcast = Flows.<String>broadcast(16)) {
+    Flow<String> events = broadcast; // Read-only view for consumers
+
+    // Multiple consumers subscribe to live events
+    Thread.ofVirtual().start(() -> {
+        try (var items = events.open()) {
+            for (var item : items) {
+                System.out.println("Consumer: " + item);
+            }
+        }
+    });
+
+    // Any thread can emit events concurrently
+    broadcast.emit("user.login");
+    broadcast.emit("order.created");
+} // close() completes all active subscribers
+```
+
+### Key Characteristics
+
+*   **Live Event Delivery**: Subscribers receive only values emitted *after* they call `open()`. Emitting when no subscribers are open is a no-op.
+*   **No Deduplication**: Every emitted value (including consecutive equal events) is delivered in order.
+*   **Per-Subscriber Buffering & Backpressure**: Use `Flows.broadcast()` for synchronous handoff or `Flows.broadcast(bufferSize)` to buffer per subscriber before `emit()` blocks.
+*   **Clean Completion**: Closing the broadcast (`close()` or `try-with-resources`) completes all active and future subscribers after buffered items are consumed.
 
 ## Operators
 
