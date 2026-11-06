@@ -106,7 +106,7 @@ public class BroadcastSequence<T> implements Flow.Sequence<T> {
 
                 try {
                     while (!sequenceClosed) {
-                        var item = queue.pollFirst();
+                        T item = queue.pollFirst();
 
                         if (item != null) {
                             nextElement = item;

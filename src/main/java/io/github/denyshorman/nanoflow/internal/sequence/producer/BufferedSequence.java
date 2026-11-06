@@ -27,7 +27,7 @@ public class BufferedSequence<T> implements Flow.Sequence<T> {
 
     public BufferedSequence(int bufferSize, Flow.Action<T> action) {
         if (bufferSize < 0) {
-            throw new IllegalArgumentException("buffer size must be non-negative or Integer.MAX_VALUE");
+            throw new IllegalArgumentException("bufferSize must be >= 0");
         } else if (bufferSize == 0) {
             queue = new SynchronousQueue<>();
         } else if (bufferSize == Integer.MAX_VALUE) {

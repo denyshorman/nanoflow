@@ -96,6 +96,7 @@ public final class Flows {
      * @throws IllegalArgumentException if {@code bufferSize} is negative
      */
     public static <T> Flow<T> flow(int bufferSize, Flow.Action<T> action) {
+        if (bufferSize < 0) throw new IllegalArgumentException("bufferSize must be >= 0");
         return new BufferedFlow<>(bufferSize, action);
     }
 

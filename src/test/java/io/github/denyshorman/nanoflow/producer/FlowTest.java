@@ -71,13 +71,10 @@ class FlowTest {
 
         @Test
         void shouldRejectNegativeBufferSize() {
-            var flow = Flows.<Integer>flow(-1, emitter -> emitter.emit(1));
-
-            assertThrows(IllegalArgumentException.class, () -> {
-                try (var items = flow.open()) {
-                    assertTrue(items.iterator().hasNext());
-                }
-            });
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Flows.<Integer>flow(-1, emitter -> emitter.emit(1))
+            );
         }
 
         @Test

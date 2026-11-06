@@ -275,6 +275,7 @@ public interface Flow<T> {
      * @throws IllegalArgumentException if {@code bufferSize} is negative
      */
     default Flow<T> buffer(int bufferSize) {
+        if (bufferSize < 0) throw new IllegalArgumentException("bufferSize must be >= 0");
         return new BufferFlow<>(this, bufferSize);
     }
 
@@ -347,7 +348,7 @@ public interface Flow<T> {
      */
     default Flow<List<T>> windowed(int size, int step) {
         if (size <= 0) throw new IllegalArgumentException("size must be positive");
-        if (step <= 0) throw new IllegalArgumentException("size must be positive");
+        if (step <= 0) throw new IllegalArgumentException("step must be positive");
         return new WindowedSizeFlow<>(this, size, step);
     }
 
