@@ -34,8 +34,9 @@ import java.util.stream.Stream;
  *
  * <p>Production begins when a flow is opened.
  *
- * <p>Flows do not allow {@code null} values. Emitting {@code null} or returning {@code null}
- * from a producer will result in a {@link NullPointerException}.
+ * <p>Flows do not allow {@code null} values. Nullability is specified via JSpecify annotations;
+ * passing or emitting {@code null} where not explicitly allowed by {@link Nullable} results in
+ * undefined behavior.
  *
  * <p>Exceptions from sources or intermediate operators are thrown during iteration or collection.
  *
@@ -433,9 +434,10 @@ public interface Flow<T> {
      * <p>Timeout applies only while waiting for the next element. Time spent processing
      * downstream (for example, blocked in {@link Emitter#emit(Object)}) does not count.
      *
+     * <p>A timeout results in {@link TimeoutException} being thrown during iteration or collection.
+     *
      * @param timeout maximum time to wait for the next element. Must be positive.
      * @return a timed flow
-     * <p>A timeout results in {@link TimeoutException} being thrown during iteration or collection.
      * @throws IllegalArgumentException if {@code timeout} is zero or negative
      */
     default Flow<T> timeout(Duration timeout) {
@@ -636,7 +638,7 @@ public interface Flow<T> {
      *     .reduce(Integer::sum); // 10
      * }</pre>
      *
-     * @param reducer reduction function. Must not be null.
+     * @param reducer reduction function
      * @return the reduced value
      * @throws NoSuchElementException if the flow is empty
      */
@@ -656,7 +658,7 @@ public interface Flow<T> {
      * }</pre>
      *
      * @param initial     initial accumulator value
-     * @param accumulator function that combines accumulator with each element. Must not be null.
+     * @param accumulator function that combines accumulator with each element
      * @param <R>         result type
      * @return the accumulated value
      */
@@ -711,7 +713,7 @@ public interface Flow<T> {
      * flow.collect(value -> System.out.println(value));
      * }</pre>
      *
-     * @param collector consumer of each element. Must not be null.
+     * @param collector consumer of each element
      * @param <E>       exception type thrown by the collector or producer
      * @throws E if the collector or producer throws an exception
      */
@@ -788,9 +790,8 @@ public interface Flow<T> {
          * canceled or the emitting thread is interrupted, this method throws
          * {@link InterruptedException}.
          *
-         * @param value value to emit. Must not be null.
+         * @param value value to emit
          * @throws InterruptedException if the flow is canceled or the emitting thread is interrupted
-         * @throws NullPointerException if {@code value} is null
          */
         void emit(T value) throws InterruptedException;
     }
@@ -899,9 +900,8 @@ public interface Flow<T> {
          * <p>This method blocks if any subscriber's buffer is full (backpressure).
          * Emitting when there are no open subscribers is a no-op.
          *
-         * @param value value to emit. Must not be null.
+         * @param value value to emit
          * @throws IllegalStateException if this broadcast is closed
-         * @throws NullPointerException  if {@code value} is null
          */
         @Override
         void emit(T value);

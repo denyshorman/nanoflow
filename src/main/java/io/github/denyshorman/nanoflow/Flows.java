@@ -17,10 +17,9 @@ import java.util.stream.Stream;
  * <p>This class provides static methods to create flows from various sources like
  * collections, streams, or custom producer actions.
  *
- * <p>Nanoflow does not allow {@code null} values in flows. All methods in this class
- * expect non-null elements and producers. Providing {@code null} where it's not
- * explicitly allowed by {@link org.jspecify.annotations.Nullable} will result
- * in a {@link NullPointerException}.
+ * <p>Nanoflow does not allow {@code null} values in flows. Nullability is specified via
+ * JSpecify annotations; providing {@code null} where not explicitly allowed by
+ * {@link org.jspecify.annotations.Nullable} results in undefined behavior.
  *
  * <p>Typical usage:
  * <pre>{@code
@@ -218,7 +217,7 @@ public final class Flows {
      *
      * <p>The iterable is traversed each time the flow is opened.
      *
-     * @param items source items. Must not be null.
+     * @param items source items
      * @param <T>   value type
      * @return a flow over the iterable
      */
@@ -234,7 +233,7 @@ public final class Flows {
      * multiple times from a stream source, use {@link #defer(Supplier)} and provide
      * a stream supplier.
      *
-     * @param stream source stream. Must not be null.
+     * @param stream source stream
      * @param <T>    value type
      * @return a flow over the stream
      */
@@ -248,7 +247,7 @@ public final class Flows {
      * <p>The publisher is subscribed each time the flow is opened. If the publisher only
      * supports a single subscription, this flow can be opened only once.
      *
-     * @param publisher source publisher. Must not be null.
+     * @param publisher source publisher
      * @param <T>       value type
      * @return a flow over the publisher
      */
@@ -269,7 +268,7 @@ public final class Flows {
      * and the thread is interrupted, or if it is used in a context that expects a
      * termination signal. For queues with a termination signal, use {@link #from(BlockingQueue, Object)}.
      *
-     * @param queue source queue. Must not be null.
+     * @param queue source queue
      * @param <T>   value type
      * @return a flow over the queue
      */
@@ -283,7 +282,7 @@ public final class Flows {
      * <p>The {@code stopToken} is not emitted. This method blocks while waiting for elements
      * in the queue.
      *
-     * @param queue     source queue. Must not be null.
+     * @param queue     source queue
      * @param stopToken value that signals the end of the flow
      * @param <T>       value type
      * @return a flow over the queue
@@ -298,7 +297,7 @@ public final class Flows {
      * <p>The element that satisfies {@code isStop} is not emitted. This method blocks while
      * waiting for elements in the queue.
      *
-     * @param queue  source queue. Must not be null.
+     * @param queue  source queue
      * @param isStop predicate that signals the end of the flow
      * @param <T>    value type
      * @return a flow over the queue
@@ -376,7 +375,7 @@ public final class Flows {
      *     .toList(); // [0.123..., 0.456..., 0.789...]
      * }</pre>
      *
-     * @param supplier value supplier. Must not be null.
+     * @param supplier value supplier
      * @param <T>      value type
      * @return a generated flow
      */
@@ -388,7 +387,7 @@ public final class Flows {
      * Returns a flow that generates at most {@code count} values using the given supplier.
      *
      * @param count    number of values to generate. Must be non-negative.
-     * @param supplier value supplier. Must not be null.
+     * @param supplier value supplier
      * @param <T>      value type
      * @return a generated flow
      * @throws IllegalArgumentException if {@code count} is negative
@@ -415,7 +414,7 @@ public final class Flows {
      * }</pre>
      *
      * @param seed initial value
-     * @param next function that produces the next value. Must not be null.
+     * @param next function that produces the next value
      * @param <T>  value type
      * @return an iterative flow
      */
@@ -427,8 +426,8 @@ public final class Flows {
      * Returns a flow by applying {@code next} to the previous value while {@code hasNext} is true.
      *
      * @param seed    initial value
-     * @param hasNext predicate that determines if the flow should continue. Must not be null.
-     * @param next    function that produces the next value. Must not be null.
+     * @param hasNext predicate that determines if the flow should continue
+     * @param next    function that produces the next value
      * @param <T>     value type
      * @return an iterative flow
      */

@@ -23,7 +23,7 @@ final public class SneakyThrow {
      * The return type is declared to allow this method to be used in contexts where a
      * return value is expected (e.g., {@code throw sneakyThrow(e);}).
      *
-     * @param e   the exception to throw; must not be null
+     * @param e   the exception to throw
      * @param <E> the type of the exception (inferred at compile time, erased at runtime)
      * @return never returns; declared as RuntimeException for syntactic convenience
      * @throws E the given exception, thrown without wrapping

@@ -360,7 +360,7 @@ Flows.range(1, 8).chunked(Duration.ofSeconds(1)).toList();
 Flows.range(1, 8).chunked(3, Duration.ofSeconds(1)).toList();
 
 // windowed: Sliding windows by count
-Flows.range(1, 5).windowed(3, 1).toList(); // [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
+Flows.range(1, 6).windowed(3, 1).toList(); // [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
 
 // windowed (time): Sliding windows by time
 Flows.range(1, 5).windowed(Duration.ofSeconds(1), Duration.ofMillis(500)).toList();
