@@ -894,6 +894,19 @@ public interface Flow<T> {
      */
     interface Broadcast<T> extends Flow<T>, Emitter<T>, AutoCloseable {
         /**
+         * Emits a value to all currently open subscribers.
+         *
+         * <p>This method blocks if any subscriber's buffer is full (backpressure).
+         * Emitting when there are no open subscribers is a no-op.
+         *
+         * @param value value to emit. Must not be null.
+         * @throws IllegalStateException if this broadcast is closed
+         * @throws NullPointerException  if {@code value} is null
+         */
+        @Override
+        void emit(T value);
+
+        /**
          * Completes this broadcast flow.
          *
          * <p>All currently open subscribers will complete after consuming any buffered elements,

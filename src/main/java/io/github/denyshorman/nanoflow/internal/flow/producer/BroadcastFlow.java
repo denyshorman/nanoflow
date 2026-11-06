@@ -9,6 +9,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static io.github.denyshorman.nanoflow.internal.util.SneakyThrow.sneakyThrow;
+
 public class BroadcastFlow<T> implements Flow.Broadcast<T> {
     private final int bufferSize;
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -20,29 +22,34 @@ public class BroadcastFlow<T> implements Flow.Broadcast<T> {
     }
 
     @Override
-    public void emit(T value) throws InterruptedException {
-        emitLock.lockInterruptibly();
-
+    public void emit(T value) {
         try {
-            if (closed.get()) {
-                throw new IllegalStateException("Broadcast is closed");
-            }
+            emitLock.lockInterruptibly();
 
-            for (var subscriber : subscribers) {
-                subscriber.awaitSpace();
-            }
-
-            for (var subscriber : subscribers) {
-                subscriber.offer(value);
-            }
-
-            if (bufferSize == 0) {
-                for (var subscriber : subscribers) {
-                    subscriber.awaitConsumed();
+            try {
+                if (closed.get()) {
+                    throw new IllegalStateException("Broadcast is closed");
                 }
+
+                for (var subscriber : subscribers) {
+                    subscriber.awaitSpace();
+                }
+
+                for (var subscriber : subscribers) {
+                    subscriber.offer(value);
+                }
+
+                if (bufferSize == 0) {
+                    for (var subscriber : subscribers) {
+                        subscriber.awaitConsumed();
+                    }
+                }
+            } finally {
+                emitLock.unlock();
             }
-        } finally {
-            emitLock.unlock();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw sneakyThrow(e);
         }
     }
 

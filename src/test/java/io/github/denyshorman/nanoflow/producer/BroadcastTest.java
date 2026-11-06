@@ -84,21 +84,13 @@ class BroadcastTest {
         assertTrue(ready.await(5, TimeUnit.SECONDS));
 
         var producer1 = Thread.ofVirtual().start(() -> {
-            try {
-                broadcast.emit("p1-a");
-                broadcast.emit("p1-b");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            broadcast.emit("p1-a");
+            broadcast.emit("p1-b");
         });
 
         var producer2 = Thread.ofVirtual().start(() -> {
-            try {
-                broadcast.emit("p2-a");
-                broadcast.emit("p2-b");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            broadcast.emit("p2-a");
+            broadcast.emit("p2-b");
         });
 
         producer1.join(5000);
@@ -182,7 +174,7 @@ class BroadcastTest {
     }
 
     @Test
-    void shouldBufferElementsWithoutBlockingEmitter() throws InterruptedException {
+    void shouldBufferElementsWithoutBlockingEmitter() {
         var broadcast = Flows.<Integer>broadcast(3);
 
         try (var items = broadcast.open()) {
@@ -241,13 +233,9 @@ class BroadcastTest {
             broadcast.emit(1);
 
             var producer = Thread.ofVirtual().start(() -> {
-                try {
-                    broadcast.emit(2);
-                    secondEmitted.countDown();
-                    broadcast.close();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+                broadcast.emit(2);
+                secondEmitted.countDown();
+                broadcast.close();
             });
 
             assertFalse(secondEmitted.await(30, TimeUnit.MILLISECONDS));
@@ -274,12 +262,8 @@ class BroadcastTest {
         broadcast.emit(1);
 
         var producer = Thread.ofVirtual().start(() -> {
-            try {
-                broadcast.emit(2);
-                secondEmitted.countDown();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            broadcast.emit(2);
+            secondEmitted.countDown();
         });
 
         assertFalse(secondEmitted.await(30, TimeUnit.MILLISECONDS));
@@ -329,7 +313,10 @@ class BroadcastTest {
 
             var producer = Thread.ofVirtual().start(() -> {
                 assertThrows(InterruptedException.class, () -> broadcast.emit(2));
-                interrupted.countDown();
+
+                if (Thread.currentThread().isInterrupted()) {
+                    interrupted.countDown();
+                }
             });
 
             Thread.sleep(20);
