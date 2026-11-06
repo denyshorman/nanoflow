@@ -19,7 +19,8 @@ public class StreamTerminal<T> {
         var characteristics = Spliterator.ORDERED | Spliterator.NONNULL;
 
         var stream = StreamSupport.stream(
-                Spliterators.spliteratorUnknownSize(sequence.iterator(), characteristics),
+                () -> Spliterators.spliteratorUnknownSize(sequence.iterator(), characteristics),
+                characteristics,
                 false
         );
 
