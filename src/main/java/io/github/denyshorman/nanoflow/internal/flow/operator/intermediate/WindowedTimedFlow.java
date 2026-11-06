@@ -49,9 +49,7 @@ public class WindowedTimedFlow<T> extends BufferedFlow<List<T>> {
 
                     Object element;
 
-                    if (!started) {
-                        element = queue.take();
-                    } else if (windows.isEmpty()) {
+                    if (windows.isEmpty()) {
                         element = queue.take();
                     } else {
                         var waitNanos = Math.max(0L, windows.peekFirst().endNanos - now);
@@ -100,6 +98,13 @@ public class WindowedTimedFlow<T> extends BufferedFlow<List<T>> {
                         if (!finished.items().isEmpty()) {
                             emitter.emit(List.copyOf(finished.items()));
                         }
+                    }
+
+                    var expiredNanos = timestamp - (nextWindowStart + windowNanos);
+
+                    if (expiredNanos >= 0L) {
+                        var skippedSteps = expiredNanos / stepNanos + 1;
+                        nextWindowStart += skippedSteps * stepNanos;
                     }
 
                     while (nextWindowStart <= timestamp) {

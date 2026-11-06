@@ -2,6 +2,7 @@ package io.github.denyshorman.nanoflow.operator;
 
 import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.time.Duration;
 import java.util.List;
@@ -34,6 +35,20 @@ class SampleTest {
                 .toList();
 
         assertEquals(List.of(3), values);
+    }
+
+    @Test
+    @Timeout(1)
+    void shouldNotSpinOrHangWithSmallPeriodWhenIdle() {
+        var flow = Flows.<Integer>flow(emitter -> {
+            emitter.emit(1);
+            Thread.sleep(50);
+            emitter.emit(2);
+        });
+
+        var values = flow.sample(Duration.ofNanos(1)).toList();
+
+        assertEquals(List.of(1, 2), values);
     }
 
     @Test

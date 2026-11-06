@@ -3,6 +3,7 @@ package io.github.denyshorman.nanoflow.operator;
 import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.time.Duration;
 import java.util.List;
@@ -64,6 +65,28 @@ class WindowedTest {
                     List.of(2, 3),
                     List.of(3)
             ), values);
+        }
+
+        @Test
+        @Timeout(1)
+        void shouldSkipEmptyWindowsDuringLongIdleGap() {
+            var flow = Flows.<Integer>flow(emitter -> {
+                emitter.emit(1);
+                Thread.sleep(50);
+                emitter.emit(2);
+            });
+
+            var values = flow.windowed(Duration.ofNanos(10), Duration.ofNanos(1)).toList();
+
+            assertEquals(
+                    List.of(
+                            List.of(1), List.of(1), List.of(1), List.of(1), List.of(1),
+                            List.of(1), List.of(1), List.of(1), List.of(1), List.of(1),
+                            List.of(2), List.of(2), List.of(2), List.of(2), List.of(2),
+                            List.of(2), List.of(2), List.of(2), List.of(2), List.of(2)
+                    ),
+                    values
+            );
         }
 
         @Test

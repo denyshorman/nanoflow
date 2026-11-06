@@ -32,34 +32,28 @@ public class SampleFlow<T> extends BufferedFlow<T> {
                 while (true) {
                     Object element;
 
-                    if (last == null) {
+                    if (!hasNew) {
                         element = queue.take();
                     } else {
                         var remaining = nextTick - System.nanoTime();
 
                         if (remaining <= 0L) {
-                            if (hasNew) {
-                                @SuppressWarnings("unchecked")
-                                var value = (T) last;
-                                emitter.emit(value);
-                                hasNew = false;
-                            }
-
-                            nextTick = System.nanoTime() + periodNanos;
+                            @SuppressWarnings("unchecked")
+                            var value = (T) last;
+                            emitter.emit(value);
+                            hasNew = false;
+                            nextTick += periodNanos;
                             continue;
                         }
 
                         element = queue.poll(remaining, TimeUnit.NANOSECONDS);
 
                         if (element == null) {
-                            if (hasNew) {
-                                @SuppressWarnings("unchecked")
-                                var value = (T) last;
-                                emitter.emit(value);
-                                hasNew = false;
-                            }
-
-                            nextTick = System.nanoTime() + periodNanos;
+                            @SuppressWarnings("unchecked")
+                            var value = (T) last;
+                            emitter.emit(value);
+                            hasNew = false;
+                            nextTick += periodNanos;
                             continue;
                         }
                     }
@@ -83,8 +77,13 @@ public class SampleFlow<T> extends BufferedFlow<T> {
                     last = element;
                     hasNew = true;
 
+                    var now = System.nanoTime();
+
                     if (nextTick == 0L) {
-                        nextTick = System.nanoTime() + periodNanos;
+                        nextTick = now + periodNanos;
+                    } else if (now - nextTick >= 0L) {
+                        var missedPeriods = (now - nextTick) / periodNanos + 1;
+                        nextTick += missedPeriods * periodNanos;
                     }
                 }
             } catch (Throwable t) {
