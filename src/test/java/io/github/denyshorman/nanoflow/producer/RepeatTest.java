@@ -31,6 +31,14 @@ class RepeatTest {
     }
 
     @Test
+    void shouldBeReusableAcrossMultipleCollections() {
+        var flow = Flows.repeat(2, 7);
+
+        assertEquals(List.of(7, 7), flow.toList());
+        assertEquals(List.of(7, 7), flow.toList());
+    }
+
+    @Test
     void shouldRejectNegativeCount() {
         assertThrows(IllegalArgumentException.class, () -> Flows.repeat(-1, "x"));
     }

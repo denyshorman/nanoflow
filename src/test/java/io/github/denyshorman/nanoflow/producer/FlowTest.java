@@ -1,5 +1,6 @@
 package io.github.denyshorman.nanoflow.producer;
 
+import io.github.denyshorman.nanoflow.Flow;
 import io.github.denyshorman.nanoflow.Flows;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -8,11 +9,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class FlowTest {
     @Nested
@@ -53,6 +53,27 @@ class FlowTest {
             );
 
             assertSame(error, thrown);
+            assertTrue(Thread.interrupted());
+        }
+
+        @Test
+        void shouldInterruptEmitterWhenSequenceIsAlreadyClosed() throws InterruptedException {
+            var emitterRef = new AtomicReference<Flow.Emitter<Integer>>();
+            var captured = new CountDownLatch(1);
+            var release = new CountDownLatch(1);
+
+            var flow = Flows.<Integer>flow(emitter -> {
+                emitterRef.set(emitter);
+                captured.countDown();
+                release.await();
+            });
+
+            var sequence = flow.open();
+            assertTrue(captured.await(5, TimeUnit.SECONDS));
+            sequence.close();
+            release.countDown();
+
+            assertThrows(InterruptedException.class, () -> emitterRef.get().emit(1));
             assertTrue(Thread.interrupted());
         }
     }

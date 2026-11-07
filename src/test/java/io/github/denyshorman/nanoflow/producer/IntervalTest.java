@@ -5,10 +5,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static io.github.denyshorman.nanoflow.Flows.interval;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class IntervalTest {
     @Nested
@@ -32,12 +32,22 @@ class IntervalTest {
     @Nested
     class InitialDelayAndPeriod {
         @Test
-        void shouldEmitTicksWithInitialDelayAndPeriod() {
+        void shouldEmitTicksWithZeroInitialDelay() {
             var values = interval(Duration.ZERO, Duration.ofMillis(1))
                     .take(3)
                     .toList();
 
             assertEquals(List.of(0L, 1L, 2L), values);
+        }
+
+        @Test
+        void shouldHonorPositiveInitialDelay() {
+            var startNanos = System.nanoTime();
+            var firstTick = interval(Duration.ofMillis(20), Duration.ofMillis(5)).first();
+            var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+
+            assertEquals(0L, firstTick);
+            assertTrue(elapsedMillis >= 15);
         }
 
         @Test

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class OfTest {
     @Test
@@ -13,5 +14,19 @@ class OfTest {
         var flow = Flows.of(1, 2, 3);
 
         assertEquals(List.of(1, 2, 3), flow.toList());
+    }
+
+    @Test
+    void shouldReturnEmptyFlowWhenNoItemsProvided() {
+        assertSame(Flows.empty(), Flows.of());
+        assertEquals(List.of(), Flows.of().toList());
+    }
+
+    @Test
+    void shouldBeReusableAcrossMultipleCollections() {
+        var flow = Flows.of("a", "b");
+
+        assertEquals(List.of("a", "b"), flow.toList());
+        assertEquals(List.of("a", "b"), flow.toList());
     }
 }
